@@ -1079,6 +1079,37 @@ function App() {
     [providerSettings, scheduleTrayIconUpdate]
   )
 
+  const handleNavProviderReorder = useCallback(
+    (orderedEnabledIds: string[]) => {
+      if (!providerSettings) return
+      if (orderedEnabledIds.length <= 1) return
+
+      const disabledSet = new Set(providerSettings.disabled)
+      const currentEnabledIds = providerSettings.order.filter((id) => !disabledSet.has(id))
+      if (currentEnabledIds.length !== orderedEnabledIds.length) {
+        return
+      }
+
+      const orderedSet = new Set(orderedEnabledIds)
+      if (currentEnabledIds.some((id) => !orderedSet.has(id))) {
+        return
+      }
+
+      let index = 0
+      const nextOrder = providerSettings.order.map((id) => {
+        if (disabledSet.has(id)) {
+          return id
+        }
+        const replacement = orderedEnabledIds[index]
+        index += 1
+        return replacement ?? id
+      })
+
+      handleReorder(nextOrder)
+    },
+    [handleReorder, providerSettings],
+  )
+
   const handleToggle = useCallback(
     (id: string) => {
       if (!providerSettings) return
@@ -1150,8 +1181,7 @@ function App() {
           accountsByProvider={accountsByProvider}
           defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
           accountsLoading={accountsLoading}
-          onReorder={handleReorder}
-          onToggle={handleToggle}
+          onToggleProvider={handleToggle}
           onReloadAccounts={reloadAccounts}
           onCreateAccount={handleCreateProviderAccount}
           onUpdateAccountLabel={handleUpdateProviderAccountLabel}
@@ -1200,6 +1230,7 @@ function App() {
             activeView={activeView}
             onViewChange={setActiveView}
             providers={navProviders}
+            onReorderProviders={handleNavProviderReorder}
           />
           <div className="flex-1 flex flex-col px-3 pt-2 pb-1.5 min-w-0 bg-card dark:bg-muted/50">
             <div className="relative flex-1 min-h-0">

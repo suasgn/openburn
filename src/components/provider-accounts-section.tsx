@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertCircle, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -42,6 +43,7 @@ interface ProviderAccountsSectionProps {
   defaultAuthStrategyByProvider: Record<string, string>
   loading: boolean
   onReloadAccounts: () => Promise<void>
+  onToggleProvider: (providerId: string) => void
   onCreateAccount: (providerId: string) => Promise<void>
   onUpdateAccountLabel: (
     providerId: string,
@@ -189,6 +191,7 @@ export function ProviderAccountsSection({
   defaultAuthStrategyByProvider,
   loading,
   onReloadAccounts,
+  onToggleProvider,
   onCreateAccount,
   onUpdateAccountLabel,
   onDeleteAccount,
@@ -285,7 +288,15 @@ export function ProviderAccountsSection({
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Badge variant="outline">{provider.enabled ? "Enabled" : "Disabled"}</Badge>
+                  <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground select-none pr-1">
+                    <Checkbox
+                      key={`${provider.id}-${provider.enabled}`}
+                      checked={provider.enabled}
+                      disabled={loading || activeAction !== null}
+                      onCheckedChange={() => onToggleProvider(provider.id)}
+                    />
+                    Enabled
+                  </label>
                   <Button
                     type="button"
                     size="xs"

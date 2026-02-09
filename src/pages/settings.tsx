@@ -1,21 +1,3 @@
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -202,71 +184,12 @@ function TrayIconStylePreview({
   );
 }
 
-function SortableProviderItem({
-  provider,
-  onToggle,
-}: {
-  provider: ProviderConfig;
-  onToggle: (id: string) => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: provider.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "flex items-center gap-3 px-3 py-2 rounded-md bg-card",
-        "border border-transparent",
-        isDragging && "opacity-50 border-border"
-      )}
-    >
-      <button
-        type="button"
-        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-        <span
-          className={cn(
-            "flex-1 text-sm",
-            !provider.enabled && "text-muted-foreground"
-          )}
-        >
-          {provider.name}
-        </span>
-
-        <Checkbox
-          key={`${provider.id}-${provider.enabled}`}
-          checked={provider.enabled}
-          onCheckedChange={() => onToggle(provider.id)}
-        />
-      </div>
-  );
-}
-
 interface SettingsPageProps {
   providers: ProviderConfig[];
   accountsByProvider: Record<string, ProviderAccountSummary[]>;
   defaultAuthStrategyByProvider: Record<string, string>;
   accountsLoading: boolean;
-  onReorder: (orderedIds: string[]) => void;
-  onToggle: (id: string) => void;
+  onToggleProvider: (id: string) => void;
   onReloadAccounts: () => Promise<void>;
   onCreateAccount: (providerId: string) => Promise<void>;
   onUpdateAccountLabel: (
@@ -302,8 +225,7 @@ export function SettingsPage({
   accountsByProvider,
   defaultAuthStrategyByProvider,
   accountsLoading,
-  onReorder,
-  onToggle,
+  onToggleProvider,
   onReloadAccounts,
   onCreateAccount,
   onUpdateAccountLabel,
@@ -329,25 +251,6 @@ export function SettingsPage({
   const trayShowPercentageChecked = percentageMandatory
     ? true
     : trayShowPercentage;
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = providers.findIndex((item) => item.id === active.id);
-      const newIndex = providers.findIndex((item) => item.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-      const next = arrayMove(providers, oldIndex, newIndex);
-      onReorder(next.map((item) => item.id));
-    }
-  };
 
   return (
     <div className="py-3 space-y-4">
@@ -489,6 +392,7 @@ export function SettingsPage({
         defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
         loading={accountsLoading}
         onReloadAccounts={onReloadAccounts}
+        onToggleProvider={onToggleProvider}
         onCreateAccount={onCreateAccount}
         onUpdateAccountLabel={onUpdateAccountLabel}
         onDeleteAccount={onDeleteAccount}
@@ -498,32 +402,6 @@ export function SettingsPage({
         onStartAccountOAuth={onStartAccountOAuth}
         onCancelAccountOAuth={onCancelAccountOAuth}
       />
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Providers</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          Your AI provider lineup
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1 space-y-1">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={providers.map((p) => p.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {providers.map((provider) => (
-                <SortableProviderItem
-                  key={provider.id}
-                  provider={provider}
-                  onToggle={onToggle}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
-        </div>
-      </section>
     </div>
   );
 }
