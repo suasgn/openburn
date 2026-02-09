@@ -9,9 +9,9 @@ Account records are persisted in JSON at:
 ```json
 {
   "id": "uuid",
-  "providerId": "openai",
+  "providerId": "codex",
   "authStrategyId": "oauth",
-  "label": "OpenAI Personal",
+  "label": "Codex Personal",
   "settings": {},
   "credentials": {
     "alg": "xchacha20poly1305",
@@ -27,6 +27,13 @@ Account records are persisted in JSON at:
 ```
 
 ## Tauri commands
+
+Supported `providerId` values:
+
+- `codex`
+- `copilot`
+- `claude`
+- `zai`
 
 - `list_accounts() -> AccountRecord[]`
 - `get_account(accountId) -> AccountRecord | null`
@@ -53,9 +60,9 @@ Encrypted credential blobs are stored directly on each account record in `accoun
 
 ```json
 {
-  "providerId": "openai",
+  "providerId": "codex",
   "authStrategyId": "oauth",
-  "label": "OpenAI Personal",
+  "label": "Codex Personal",
   "settings": {}
 }
 ```

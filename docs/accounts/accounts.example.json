@@ -3,9 +3,9 @@
   "accounts": [
     {
       "id": "8a995f66-4fae-4a79-bf11-6f2e7c4f2d98",
-      "providerId": "openai",
+      "providerId": "codex",
       "authStrategyId": "oauth",
-      "label": "OpenAI Personal",
+      "label": "Codex Personal",
       "settings": {
         "organizationId": "org_abc123",
         "region": "us"

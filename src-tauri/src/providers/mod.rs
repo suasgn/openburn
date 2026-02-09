@@ -1,7 +1,11 @@
+mod claude;
+mod codex;
 mod contract;
+mod copilot;
 mod descriptor;
 mod registry;
 mod validation;
+mod zai;
 
 pub use descriptor::ProviderDescriptor;
 pub use registry::{all_provider_descriptors, find_provider_contract};
@@ -13,16 +17,18 @@ mod tests {
 
     #[test]
     fn known_provider_is_resolved() {
-        let provider = find_provider_contract("openai").expect("provider should exist");
-        assert_eq!(provider.id, "openai");
-        assert!(find_provider_contract(" OpenAI ").is_some());
+        let provider = find_provider_contract("codex").expect("provider should exist");
+        assert_eq!(provider.id, "codex");
+        assert!(find_provider_contract(" CODEX ").is_some());
         assert!(find_provider_contract("unknown").is_none());
     }
 
     #[test]
     fn descriptors_are_exposed() {
         let providers = all_provider_descriptors();
-        assert!(providers.iter().any(|provider| provider.id == "openai"));
+        assert!(providers.iter().any(|provider| provider.id == "codex"));
+        assert!(providers.iter().any(|provider| provider.id == "copilot"));
+        assert!(providers.iter().any(|provider| provider.id == "claude"));
         assert!(providers.iter().any(|provider| provider.id == "zai"));
     }
 }

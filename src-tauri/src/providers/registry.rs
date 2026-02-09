@@ -1,46 +1,12 @@
-use super::contract::{AuthStrategyContract, AuthStrategyKind, ProviderContract, SettingsContract};
+use super::contract::ProviderContract;
 use super::descriptor::ProviderDescriptor;
+use super::{claude, codex, copilot, zai};
 
-const OPENAI_AUTH_STRATEGIES: [AuthStrategyContract; 2] = [
-    AuthStrategyContract {
-        id: "oauth",
-        label: "OAuth",
-        kind: AuthStrategyKind::OAuth,
-    },
-    AuthStrategyContract {
-        id: "apiKey",
-        label: "API Key",
-        kind: AuthStrategyKind::ApiKey,
-    },
-];
-
-const ZAI_AUTH_STRATEGIES: [AuthStrategyContract; 1] = [AuthStrategyContract {
-    id: "apiKey",
-    label: "API Key",
-    kind: AuthStrategyKind::ApiKey,
-}];
-
-const PROVIDERS: [ProviderContract; 2] = [
-    ProviderContract {
-        id: "openai",
-        name: "OpenAI",
-        default_auth_strategy_id: "oauth",
-        auth_strategies: &OPENAI_AUTH_STRATEGIES,
-        settings: SettingsContract {
-            required_keys: &[],
-            allow_additional_keys: true,
-        },
-    },
-    ProviderContract {
-        id: "zai",
-        name: "Z.ai",
-        default_auth_strategy_id: "apiKey",
-        auth_strategies: &ZAI_AUTH_STRATEGIES,
-        settings: SettingsContract {
-            required_keys: &[],
-            allow_additional_keys: true,
-        },
-    },
+const PROVIDERS: [ProviderContract; 4] = [
+    codex::CONTRACT,
+    copilot::CONTRACT,
+    claude::CONTRACT,
+    zai::CONTRACT,
 ];
 
 pub fn all_provider_descriptors() -> Vec<ProviderDescriptor> {

@@ -159,11 +159,18 @@ impl AccountStore {
         }
 
         let mut state = self.lock_state()?;
-        let account = state
+        let account_index = state
             .accounts
-            .iter_mut()
-            .find(|account| account.id == account_id)
+            .iter()
+            .position(|account| account.id == account_id)
             .ok_or(BackendError::AccountNotFound)?;
+        let mut account = state.accounts[account_index].clone();
+        let provider = find_provider_contract(&account.provider_id).ok_or_else(|| {
+            BackendError::Store(format!(
+                "providerId '{}' is not registered",
+                account.provider_id
+            ))
+        })?;
 
         if let Some(raw_label) = input.label {
             let label = normalize_string(&raw_label)
@@ -173,27 +180,20 @@ impl AccountStore {
 
         if let Some(raw_strategy_id) = input.auth_strategy_id {
             let strategy_id = normalize_string(&raw_strategy_id);
-            match strategy_id {
-                Some(strategy_id) => {
-                    if !is_valid_strategy_id(&strategy_id) {
-                        return Err(BackendError::Validation(
-                            "authStrategyId must match ^[a-zA-Z][a-zA-Z0-9._-]{1,63}$".to_string(),
-                        ));
-                    }
-                    account.auth_strategy_id = Some(strategy_id);
-                }
-                None => {
-                    account.auth_strategy_id = None;
+            if let Some(strategy_id) = strategy_id.as_deref() {
+                if !is_valid_strategy_id(strategy_id) {
+                    return Err(BackendError::Validation(
+                        "authStrategyId must match ^[a-zA-Z][a-zA-Z0-9._-]{1,63}$".to_string(),
+                    ));
                 }
             }
+            validate_auth_strategy_for_provider(provider, strategy_id.as_deref())
+                .map_err(BackendError::Validation)?;
+            account.auth_strategy_id = strategy_id;
         }
 
         if let Some(settings) = input.settings {
-            if !settings.is_object() {
-                return Err(BackendError::Validation(
-                    "settings must be a JSON object".to_string(),
-                ));
-            }
+            validate_provider_settings(provider, &settings).map_err(BackendError::Validation)?;
             account.settings = settings;
         }
 
@@ -202,9 +202,9 @@ impl AccountStore {
         }
 
         account.updated_at = now_rfc3339();
-        let updated = account.clone();
+        state.accounts[account_index] = account.clone();
         self.save_locked(&state)?;
-        Ok(updated)
+        Ok(account)
     }
 
     pub fn delete_account(&self, account_id: &str) -> Result<Option<AccountRecord>> {
@@ -342,20 +342,20 @@ mod tests {
         let store = AccountStore::load_from_path(path.clone()).expect("store should load");
         let account = store
             .create_account(CreateAccountInput {
-                provider_id: "openai".to_string(),
+                provider_id: "codex".to_string(),
                 auth_strategy_id: Some("oauth".to_string()),
-                label: Some("OpenAI Personal".to_string()),
+                label: Some("Codex Personal".to_string()),
                 settings: Some(serde_json::json!({"region": "us"})),
             })
             .expect("account should be created");
-        assert_eq!(account.provider_id, "openai");
+        assert_eq!(account.provider_id, "codex");
 
         drop(store);
 
         let reloaded = AccountStore::load_from_path(path).expect("store should reload");
         let accounts = reloaded.list_accounts().expect("list should succeed");
         assert_eq!(accounts.len(), 1);
-        assert_eq!(accounts[0].label, "OpenAI Personal");
+        assert_eq!(accounts[0].label, "Codex Personal");
 
         fs::remove_dir_all(parent).expect("temp dir should be removed");
     }
@@ -371,7 +371,7 @@ mod tests {
         let store = AccountStore::load_from_path(path).expect("store should load");
         let account = store
             .create_account(CreateAccountInput {
-                provider_id: "openai".to_string(),
+                provider_id: "codex".to_string(),
                 auth_strategy_id: Some("oauth".to_string()),
                 label: None,
                 settings: None,
@@ -391,6 +391,49 @@ mod tests {
             .expect("account should be updated");
 
         assert_eq!(updated.auth_strategy_id, None);
+
+        fs::remove_dir_all(parent).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn update_account_rejects_unsupported_provider_auth_strategy_without_mutation() {
+        let path = make_temp_store_path();
+        let parent = path
+            .parent()
+            .expect("temp store path should have a parent")
+            .to_path_buf();
+
+        let store = AccountStore::load_from_path(path).expect("store should load");
+        let account = store
+            .create_account(CreateAccountInput {
+                provider_id: "zai".to_string(),
+                auth_strategy_id: Some("apiKey".to_string()),
+                label: Some("Z.ai Work".to_string()),
+                settings: None,
+            })
+            .expect("account should be created");
+
+        let result = store.update_account(
+            &account.id,
+            UpdateAccountInput {
+                auth_strategy_id: Some("oauth".to_string()),
+                label: Some("Should Not Persist".to_string()),
+                settings: None,
+                clear_last_error: false,
+            },
+        );
+
+        let err = result.expect_err("unsupported auth strategy should fail");
+        assert!(err
+            .to_string()
+            .contains("is not supported by providerId 'zai'"));
+
+        let unchanged = store
+            .get_account(&account.id)
+            .expect("get should work")
+            .expect("account should exist");
+        assert_eq!(unchanged.label, "Z.ai Work");
+        assert_eq!(unchanged.auth_strategy_id.as_deref(), Some("apiKey"));
 
         fs::remove_dir_all(parent).expect("temp dir should be removed");
     }
@@ -430,9 +473,9 @@ mod tests {
         let store = AccountStore::load_from_path(path.clone()).expect("store should load");
         let account = store
             .create_account(CreateAccountInput {
-                provider_id: "openai".to_string(),
+                provider_id: "codex".to_string(),
                 auth_strategy_id: Some("oauth".to_string()),
-                label: Some("OpenAI Personal".to_string()),
+                label: Some("Codex Personal".to_string()),
                 settings: Some(serde_json::json!({})),
             })
             .expect("account should be created");

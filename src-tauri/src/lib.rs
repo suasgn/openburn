@@ -97,7 +97,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_keyring::init())
         .setup(|app| {
-            let store = AccountStore::load(&app.handle())
+            let store = AccountStore::load(app.handle())
                 .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             app.manage(store);
             Ok(())
