@@ -4,11 +4,17 @@ import type { DisplayMode } from "@/lib/settings"
 
 interface OverviewPageProps {
   providers: ProviderDisplayState[]
+  accountOrderByProvider?: Record<string, string[]>
   onRetryProvider?: (providerId: string) => void
   displayMode: DisplayMode
 }
 
-export function OverviewPage({ providers, onRetryProvider, displayMode }: OverviewPageProps) {
+export function OverviewPage({
+  providers,
+  accountOrderByProvider,
+  onRetryProvider,
+  displayMode,
+}: OverviewPageProps) {
   if (providers.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8">
@@ -29,6 +35,7 @@ export function OverviewPage({ providers, onRetryProvider, displayMode }: Overvi
           error={provider.error}
           lines={provider.data?.lines ?? []}
           skeletonLines={provider.meta.lines}
+          accountOrder={accountOrderByProvider?.[provider.meta.id] ?? []}
           onRetry={onRetryProvider ? () => onRetryProvider(provider.meta.id) : undefined}
           scopeFilter="overview"
           displayMode={displayMode}

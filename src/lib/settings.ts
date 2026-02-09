@@ -10,6 +10,8 @@ export type ProviderSettings = {
   disabled: string[];
 };
 
+export type AccountOrderByProvider = Record<string, string[]>;
+
 export type AutoUpdateIntervalMinutes = 5 | 15 | 30 | 60;
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -20,6 +22,7 @@ export type TrayIconStyle = "bars" | "circle" | "provider" | "textOnly";
 
 const SETTINGS_STORE_PATH = "settings.json";
 const PROVIDER_SETTINGS_KEY = "providers";
+const ACCOUNT_ORDER_KEY = "accountOrderByProvider";
 const AUTO_UPDATE_SETTINGS_KEY = "autoUpdateInterval";
 const THEME_MODE_KEY = "themeMode";
 const DISPLAY_MODE_KEY = "displayMode";
@@ -85,6 +88,34 @@ export async function loadProviderSettings(): Promise<ProviderSettings> {
 
 export async function saveProviderSettings(settings: ProviderSettings): Promise<void> {
   await store.set(PROVIDER_SETTINGS_KEY, settings);
+  await store.save();
+}
+
+export async function loadAccountOrderByProvider(): Promise<AccountOrderByProvider> {
+  const stored = await store.get<unknown>(ACCOUNT_ORDER_KEY);
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
+    return {};
+  }
+
+  const result: AccountOrderByProvider = {};
+  for (const [providerId, ids] of Object.entries(stored as Record<string, unknown>)) {
+    if (!Array.isArray(ids)) continue;
+    const normalized = ids
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    if (normalized.length > 0) {
+      result[providerId] = normalized;
+    }
+  }
+
+  return result;
+}
+
+export async function saveAccountOrderByProvider(
+  orderByProvider: AccountOrderByProvider
+): Promise<void> {
+  await store.set(ACCOUNT_ORDER_KEY, orderByProvider);
   await store.save();
 }
 

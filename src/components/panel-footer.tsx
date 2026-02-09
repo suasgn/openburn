@@ -1,14 +1,17 @@
 import { useMemo } from "react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AboutDialog } from "@/components/about-dialog";
 import type { UpdateStatus } from "@/hooks/use-app-update";
 import { useNowTicker } from "@/hooks/use-now-ticker";
+import { cn } from "@/lib/utils";
 
 interface PanelFooterProps {
   version: string;
   autoUpdateNextAt: number | null;
   updateStatus: UpdateStatus;
   onUpdateInstall: () => void;
+  onManualRefreshAll?: () => void;
   showAbout: boolean;
   onShowAbout: () => void;
   onCloseAbout: () => void;
@@ -73,6 +76,7 @@ export function PanelFooter({
   autoUpdateNextAt,
   updateStatus,
   onUpdateInstall,
+  onManualRefreshAll,
   showAbout,
   onShowAbout,
   onCloseAbout,
@@ -95,16 +99,35 @@ export function PanelFooter({
 
   return (
     <>
-      <div className="flex justify-between items-center h-8 pt-1.5 border-t">
+      <div className="group/footer flex justify-between items-center h-8 pt-1.5 border-t">
         <VersionDisplay
           version={version}
           updateStatus={updateStatus}
           onUpdateInstall={onUpdateInstall}
           onVersionClick={onShowAbout}
         />
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {countdownLabel}
-        </span>
+        <div className="relative flex items-center justify-end min-w-[140px]">
+          <span
+            className={cn(
+              "text-xs text-muted-foreground tabular-nums transition-opacity",
+              onManualRefreshAll && "group-hover/footer:opacity-0"
+            )}
+          >
+            {countdownLabel}
+          </span>
+          {onManualRefreshAll && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="absolute right-0 h-6 opacity-0 pointer-events-none transition-opacity group-hover/footer:opacity-100 group-hover/footer:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto"
+              onClick={onManualRefreshAll}
+            >
+              <RefreshCw className="size-3" />
+              Refresh
+            </Button>
+          )}
+        </div>
       </div>
       {showAbout && (
         <AboutDialog version={version} onClose={onCloseAbout} />

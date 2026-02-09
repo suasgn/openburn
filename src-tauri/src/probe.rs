@@ -330,6 +330,7 @@ pub async fn probe_provider(
     let mut account_errors: Vec<(AccountScope, String)> = Vec::new();
     let has_multiple_accounts = accounts.len() > 1;
 
+    // Keep account probing sequential per provider to avoid account-level burst rate limits.
     for account in accounts {
         let account_scope = AccountScope {
             label: normalized_account_label(&account.label, &account.id),

@@ -18,6 +18,7 @@ import { getBaseMetricLabel, splitAccountScopedLabel } from "@/lib/account-scope
 interface ProviderCardProps {
   name: string
   plan?: string
+  accountOrder?: string[]
   showSeparator?: boolean
   loading?: boolean
   error?: string | null
@@ -148,6 +149,7 @@ function PaceIndicator({
 export function ProviderCard({
   name,
   plan,
+  accountOrder = [],
   showSeparator = true,
   loading = false,
   error = null,
@@ -203,8 +205,20 @@ export function ProviderCard({
       group.lines.push(scoped.line)
     }
 
+    if (accountOrder.length > 0 && groups.length > 1) {
+      const orderIndexById = new Map(accountOrder.map((accountId, index) => [accountId, index]))
+      groups.sort((left, right) => {
+        const leftOrder = left.accountId ? orderIndexById.get(left.accountId) : undefined
+        const rightOrder = right.accountId ? orderIndexById.get(right.accountId) : undefined
+        if (leftOrder === undefined && rightOrder === undefined) return 0
+        if (leftOrder === undefined) return 1
+        if (rightOrder === undefined) return -1
+        return leftOrder - rightOrder
+      })
+    }
+
     return { ungrouped, groups }
-  }, [filteredLines])
+  }, [accountOrder, filteredLines])
 
   const hasResetCountdown = filteredLines.some(
     (line) => line.type === "progress" && Boolean(line.resetsAt)

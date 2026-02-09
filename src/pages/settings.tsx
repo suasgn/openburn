@@ -189,6 +189,7 @@ interface SettingsPageProps {
   accountsByProvider: Record<string, ProviderAccountSummary[]>;
   defaultAuthStrategyByProvider: Record<string, string>;
   accountsLoading: boolean;
+  onReorderAccounts: (providerId: string, orderedAccountIds: string[]) => void;
   onToggleProvider: (id: string) => void;
   onReloadAccounts: () => Promise<void>;
   onCreateAccount: (providerId: string) => Promise<void>;
@@ -225,6 +226,7 @@ export function SettingsPage({
   accountsByProvider,
   defaultAuthStrategyByProvider,
   accountsLoading,
+  onReorderAccounts,
   onToggleProvider,
   onReloadAccounts,
   onCreateAccount,
@@ -391,6 +393,7 @@ export function SettingsPage({
         accountsByProvider={accountsByProvider}
         defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
         loading={accountsLoading}
+        onReorderAccounts={onReorderAccounts}
         onReloadAccounts={onReloadAccounts}
         onToggleProvider={onToggleProvider}
         onCreateAccount={onCreateAccount}

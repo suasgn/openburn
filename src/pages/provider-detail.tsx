@@ -4,11 +4,17 @@ import type { DisplayMode } from "@/lib/settings"
 
 interface ProviderDetailPageProps {
   provider: ProviderDisplayState | null
+  accountOrder?: string[]
   onRetry?: () => void
   displayMode: DisplayMode
 }
 
-export function ProviderDetailPage({ provider, onRetry, displayMode }: ProviderDetailPageProps) {
+export function ProviderDetailPage({
+  provider,
+  accountOrder = [],
+  onRetry,
+  displayMode,
+}: ProviderDetailPageProps) {
   if (!provider) {
     return (
       <div className="text-center text-muted-foreground py-8">
@@ -26,6 +32,7 @@ export function ProviderDetailPage({ provider, onRetry, displayMode }: ProviderD
       error={provider.error}
       lines={provider.data?.lines ?? []}
       skeletonLines={provider.meta.lines}
+      accountOrder={accountOrder}
       onRetry={onRetry}
       scopeFilter="all"
       displayMode={displayMode}

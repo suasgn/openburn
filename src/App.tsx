@@ -49,6 +49,7 @@ import {
   getEnabledProviderIds,
   isTrayPercentageMandatory,
   loadAutoUpdateInterval,
+  loadAccountOrderByProvider,
   loadDisplayMode,
   loadProviderSettings,
   loadTrayShowPercentage,
@@ -56,11 +57,13 @@ import {
   loadThemeMode,
   normalizeProviderSettings,
   saveAutoUpdateInterval,
+  saveAccountOrderByProvider,
   saveDisplayMode,
   saveProviderSettings,
   saveTrayShowPercentage,
   saveTrayIconStyle,
   saveThemeMode,
+  type AccountOrderByProvider,
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type ProviderSettings,
@@ -100,6 +103,8 @@ function App() {
   const [providersMeta, setProvidersMeta] = useState<ProviderMeta[]>([])
   const [providerDescriptors, setProviderDescriptors] = useState<ProviderDescriptor[]>([])
   const [accounts, setAccounts] = useState<AccountRecord[]>([])
+  const [accountOrderByProvider, setAccountOrderByProvider] =
+    useState<AccountOrderByProvider>({})
   const [accountCredentialsById, setAccountCredentialsById] = useState<Record<string, boolean>>({})
   const [accountOAuthSessionById, setAccountOAuthSessionById] = useState<
     Record<string, AccountOAuthSession | undefined>
@@ -110,7 +115,6 @@ function App() {
     DEFAULT_AUTO_UPDATE_INTERVAL
   )
   const [autoUpdateNextAt, setAutoUpdateNextAt] = useState<number | null>(null)
-  const [autoUpdateResetToken, setAutoUpdateResetToken] = useState(0)
   const [themeMode, setThemeMode] = useState<ThemeMode>(DEFAULT_THEME_MODE)
   const [displayMode, setDisplayMode] = useState<DisplayMode>(DEFAULT_DISPLAY_MODE)
   const [trayIconStyle, setTrayIconStyle] = useState<TrayIconStyle>(DEFAULT_TRAY_ICON_STYLE)
@@ -572,7 +576,7 @@ function App() {
   }, [providerDescriptors])
 
   const accountsByProvider = useMemo(() => {
-    return accounts.reduce<
+    const grouped = accounts.reduce<
       Record<
         string,
         Array<{
@@ -602,7 +606,63 @@ function App() {
 
       return result
     }, {})
-  }, [accounts, accountCredentialsById])
+
+    for (const [providerId, providerAccounts] of Object.entries(grouped)) {
+      const order = accountOrderByProvider[providerId] ?? []
+      if (order.length === 0 || providerAccounts.length <= 1) {
+        continue
+      }
+      const orderIndex = new Map(order.map((accountId, index) => [accountId, index]))
+      providerAccounts.sort((left, right) => {
+        const leftIndex = orderIndex.get(left.id)
+        const rightIndex = orderIndex.get(right.id)
+        if (leftIndex === undefined && rightIndex === undefined) return 0
+        if (leftIndex === undefined) return 1
+        if (rightIndex === undefined) return -1
+        return leftIndex - rightIndex
+      })
+    }
+
+    return grouped
+  }, [accounts, accountCredentialsById, accountOrderByProvider])
+
+  const accountIdsByProvider = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(accountsByProvider).map(([providerId, providerAccounts]) => [
+        providerId,
+        providerAccounts.map((account) => account.id),
+      ]),
+    ) as Record<string, string[]>
+  }, [accountsByProvider])
+
+  const handleReorderProviderAccounts = useCallback(
+    (providerId: string, orderedAccountIds: string[]) => {
+      if (orderedAccountIds.length <= 1) return
+
+      setAccountOrderByProvider((previous) => {
+        const current = previous[providerId] ?? []
+        const unchanged =
+          current.length === orderedAccountIds.length &&
+          current.every((accountId, index) => accountId === orderedAccountIds[index])
+        if (unchanged) {
+          return previous
+        }
+
+        const next: AccountOrderByProvider = {
+          ...previous,
+          [providerId]: orderedAccountIds,
+        }
+
+        track("accounts_reordered", { provider_id: providerId, count: orderedAccountIds.length })
+        void saveAccountOrderByProvider(next).catch((error) => {
+          console.error("Failed to save account order:", error)
+        })
+
+        return next
+      })
+    },
+    [],
+  )
 
   const handleCreateProviderAccount = useCallback(
     async (providerId: string) => {
@@ -845,6 +905,13 @@ function App() {
           console.error("Failed to load tray show percentage:", error)
         }
 
+        let storedAccountOrderByProvider: AccountOrderByProvider = {}
+        try {
+          storedAccountOrderByProvider = await loadAccountOrderByProvider()
+        } catch (error) {
+          console.error("Failed to load account order:", error)
+        }
+
         const normalizedTrayShowPercentage = isTrayPercentageMandatory(storedTrayIconStyle)
           ? true
           : storedTrayShowPercentage
@@ -856,6 +923,7 @@ function App() {
           setDisplayMode(storedDisplayMode)
           setTrayIconStyle(storedTrayIconStyle)
           setTrayShowPercentage(normalizedTrayShowPercentage)
+          setAccountOrderByProvider(storedAccountOrderByProvider)
 
           try {
             await reloadAccounts()
@@ -919,7 +987,6 @@ function App() {
     return () => clearInterval(interval)
   }, [
     autoUpdateInterval,
-    autoUpdateResetToken,
     providerSettings,
     setLoadingForProviders,
     setErrorForProviders,
@@ -950,24 +1017,9 @@ function App() {
     return () => mq.removeEventListener("change", handler)
   }, [themeMode])
 
-  const resetAutoUpdateSchedule = useCallback(() => {
-    if (!providerSettings) return
-    const enabledIds = getEnabledProviderIds(providerSettings)
-    // Defensive: retry only possible for enabled providers, so this branch is unreachable in normal use
-    /* v8 ignore start */
-    if (enabledIds.length === 0) {
-      setAutoUpdateNextAt(null)
-      return
-    }
-    /* v8 ignore stop */
-    setAutoUpdateNextAt(Date.now() + autoUpdateInterval * 60_000)
-    setAutoUpdateResetToken((value) => value + 1)
-  }, [autoUpdateInterval, providerSettings])
-
   const handleRetryProvider = useCallback(
     (id: string) => {
       track("provider_refreshed", { provider_id: id })
-      resetAutoUpdateSchedule()
       // Mark as manual refresh
       manualRefreshIdsRef.current.add(id)
       setLoadingForProviders([id])
@@ -976,8 +1028,29 @@ function App() {
         setErrorForProviders([id], "Failed to start probe")
       })
     },
-    [resetAutoUpdateSchedule, setLoadingForProviders, setErrorForProviders, startBatch]
+    [setLoadingForProviders, setErrorForProviders, startBatch]
   )
+
+  const handleManualRefreshAll = useCallback(() => {
+    if (!providerSettings) return
+    const enabledIds = getEnabledProviderIds(providerSettings)
+    if (enabledIds.length === 0) return
+
+    track("providers_refreshed", { count: enabledIds.length })
+    for (const id of enabledIds) {
+      manualRefreshIdsRef.current.add(id)
+    }
+    setLoadingForProviders(enabledIds)
+    startBatch(enabledIds).catch((error) => {
+      console.error("Failed to manually refresh providers:", error)
+      setErrorForProviders(enabledIds, "Failed to start probe")
+    })
+  }, [providerSettings, setLoadingForProviders, setErrorForProviders, startBatch])
+
+  const hasEnabledProviders = useMemo(() => {
+    if (!providerSettings) return false
+    return getEnabledProviderIds(providerSettings).length > 0
+  }, [providerSettings])
 
   const handleThemeModeChange = useCallback((mode: ThemeMode) => {
     track("setting_changed", { setting: "theme", value: mode })
@@ -1169,6 +1242,7 @@ function App() {
       return (
         <OverviewPage
           providers={displayProviders}
+          accountOrderByProvider={accountIdsByProvider}
           onRetryProvider={handleRetryProvider}
           displayMode={displayMode}
         />
@@ -1181,6 +1255,7 @@ function App() {
           accountsByProvider={accountsByProvider}
           defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
           accountsLoading={accountsLoading}
+          onReorderAccounts={handleReorderProviderAccounts}
           onToggleProvider={handleToggle}
           onReloadAccounts={reloadAccounts}
           onCreateAccount={handleCreateProviderAccount}
@@ -1212,6 +1287,7 @@ function App() {
     return (
       <ProviderDetailPage
         provider={selectedProvider}
+        accountOrder={selectedProvider ? (accountIdsByProvider[selectedProvider.meta.id] ?? []) : []}
         onRetry={handleRetry}
         displayMode={displayMode}
       />
@@ -1244,6 +1320,7 @@ function App() {
               autoUpdateNextAt={autoUpdateNextAt}
               updateStatus={updateStatus}
               onUpdateInstall={triggerInstall}
+              onManualRefreshAll={hasEnabledProviders ? handleManualRefreshAll : undefined}
               showAbout={showAbout}
               onShowAbout={() => setShowAbout(true)}
               onCloseAbout={() => setShowAbout(false)}

@@ -1,9 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { AlertCircle, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 
 type ProviderConfig = {
   id: string
@@ -41,6 +60,7 @@ interface ProviderAccountsSectionProps {
   accountsByProvider: AccountsByProvider
   defaultAuthStrategyByProvider: Record<string, string>
   loading: boolean
+  onReorderAccounts: (providerId: string, orderedAccountIds: string[]) => void
   onReloadAccounts: () => Promise<void>
   onToggleProvider: (providerId: string) => void
   onCreateAccount: (providerId: string) => Promise<void>
@@ -184,11 +204,45 @@ function parseCredentialsInput(
   }
 }
 
+type SortableAccountCardRenderProps = {
+  dragAttributes: Record<string, unknown>
+  dragListeners: Record<string, unknown>
+}
+
+function SortableAccountCard({
+  accountId,
+  className,
+  children,
+}: {
+  accountId: string
+  className: string
+  children: (props: SortableAccountCardRenderProps) => React.ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: accountId,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn(className, isDragging && "opacity-70")}> 
+      {children({
+        dragAttributes: attributes as unknown as Record<string, unknown>,
+        dragListeners: listeners as unknown as Record<string, unknown>,
+      })}
+    </div>
+  )
+}
+
 export function ProviderAccountsSection({
   providers,
   accountsByProvider,
   defaultAuthStrategyByProvider,
   loading,
+  onReorderAccounts,
   onReloadAccounts,
   onToggleProvider,
   onCreateAccount,
@@ -206,7 +260,22 @@ export function ProviderAccountsSection({
   const [credentialsDraftByAccount, setCredentialsDraftByAccount] = useState<
     Record<string, string>
   >({})
+  const [zaiApiKeyDraftByAccount, setZaiApiKeyDraftByAccount] = useState<Record<string, string>>(
+    {},
+  )
+  const [zaiRegionDraftByAccount, setZaiRegionDraftByAccount] = useState<Record<string, string>>(
+    {},
+  )
   const labelSaveTimerByAccountRef = useRef<Record<string, number>>({})
+
+  const accountReorderSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
 
   useEffect(() => {
     return () => {
@@ -238,6 +307,22 @@ export function ProviderAccountsSection({
     } finally {
       setActiveAction(null)
     }
+  }
+
+  const handleAccountDragEnd = (
+    providerId: string,
+    orderedAccountIds: string[],
+    event: DragEndEvent,
+  ) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const sourceIndex = orderedAccountIds.indexOf(String(active.id))
+    const targetIndex = orderedAccountIds.indexOf(String(over.id))
+    if (sourceIndex < 0 || targetIndex < 0) return
+
+    const nextIds = arrayMove(orderedAccountIds, sourceIndex, targetIndex)
+    onReorderAccounts(providerId, nextIds)
   }
 
   return (
@@ -276,6 +361,7 @@ export function ProviderAccountsSection({
           const defaultStrategy =
             defaultAuthStrategyByProvider[provider.id] || "(unknown)"
           const createActionId = `create:${provider.id}`
+          const orderedAccountIds = accounts.map((account) => account.id)
 
           return (
             <div key={provider.id} className="rounded-lg border bg-muted/50 p-2 space-y-2">
@@ -321,8 +407,14 @@ export function ProviderAccountsSection({
                   No account configured yet.
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {accounts.map((account) => {
+                <DndContext
+                  sensors={accountReorderSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(event) => handleAccountDragEnd(provider.id, orderedAccountIds, event)}
+                >
+                  <SortableContext items={orderedAccountIds} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-2">
+                      {accounts.map((account) => {
                     const labelValue =
                       labelDraftByAccount[account.id] === undefined
                         ? account.label
@@ -335,12 +427,28 @@ export function ProviderAccountsSection({
                     const oauthSession = oauthSessionByAccount[account.id]
                     const canOAuth = supportsNativeOAuth(provider.id)
                     const supportsManualCredentials = !canOAuth
+                    const supportsZaiCredentialForm = provider.id === "zai"
+                    const supportsJsonCredentials = supportsManualCredentials && !supportsZaiCredentialForm
                     const oauthPending = oauthSession?.status === "pending"
                     const oauthError = oauthSession?.status === "error"
                     const accountFetchStatus = resolveAccountFetchStatus(account)
+                    const zaiApiKeyValue = zaiApiKeyDraftByAccount[account.id] ?? ""
+                    const zaiRegionValue = zaiRegionDraftByAccount[account.id] ?? "global"
 
                     return (
-                      <div key={account.id} className="rounded-md border bg-card p-2 space-y-2">
+                      <SortableAccountCard
+                        key={account.id}
+                        accountId={account.id}
+                        className="rounded-md border bg-card p-2 space-y-2"
+                      >
+                        {({ dragAttributes, dragListeners }) => {
+                          const dragHandleProps = {
+                            ...dragAttributes,
+                            ...dragListeners,
+                          } as unknown as Record<string, unknown>
+
+                          return (
+                        <>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
@@ -349,7 +457,8 @@ export function ProviderAccountsSection({
                                   render={(props) => (
                                     <p
                                       {...props}
-                                      className="text-sm font-medium truncate"
+                                      className="text-sm font-medium truncate cursor-grab active:cursor-grabbing"
+                                      {...(dragHandleProps as Record<string, unknown>)}
                                     >
                                       {account.label}
                                     </p>
@@ -445,7 +554,63 @@ export function ProviderAccountsSection({
                           />
                         </div>
 
-                        {supportsManualCredentials && (
+                        {supportsZaiCredentialForm && (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="block text-xs text-muted-foreground">API key</label>
+                                <input
+                                  type="password"
+                                  value={zaiApiKeyValue}
+                                  onChange={(event) => {
+                                    const value = event.target.value
+                                    setZaiApiKeyDraftByAccount((previous) => ({
+                                      ...previous,
+                                      [account.id]: value,
+                                    }))
+                                  }}
+                                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                  placeholder="Enter Z.ai API key"
+                                  autoComplete="off"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs text-muted-foreground">Region</label>
+                                <Tabs
+                                  value={zaiRegionValue}
+                                  onValueChange={(value) => {
+                                    setZaiRegionDraftByAccount((previous) => ({
+                                      ...previous,
+                                      [account.id]: value,
+                                    }))
+                                  }}
+                                >
+                                  <TabsList className="h-8 w-full">
+                                    <TabsTrigger
+                                      value="global"
+                                      className="text-xs"
+                                      disabled={loading || activeAction !== null}
+                                    >
+                                      Global
+                                    </TabsTrigger>
+                                    <TabsTrigger
+                                      value="cn"
+                                      className="text-xs"
+                                      disabled={loading || activeAction !== null}
+                                    >
+                                      China
+                                    </TabsTrigger>
+                                  </TabsList>
+                                </Tabs>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              Region selects endpoint: Global uses api.z.ai, China uses open.bigmodel.cn.
+                            </p>
+                          </div>
+                        )}
+
+                        {supportsJsonCredentials && (
                           <textarea
                             value={credentialsDraftByAccount[account.id] ?? ""}
                             onChange={(event) => {
@@ -503,7 +668,41 @@ export function ProviderAccountsSection({
                               )}
                             </>
                           )}
-                          {supportsManualCredentials && (
+                          {supportsZaiCredentialForm && (
+                            <Button
+                              type="button"
+                              size="xs"
+                              disabled={loading || activeAction !== null}
+                              onClick={() =>
+                                runAction(`save-zai-creds:${account.id}`, async () => {
+                                  const apiKey = (zaiApiKeyDraftByAccount[account.id] ?? "").trim()
+                                  if (!apiKey) {
+                                    throw new Error("API key is required")
+                                  }
+                                  const region = zaiRegionDraftByAccount[account.id] ?? "global"
+                                  const credentials: Record<string, unknown> = {
+                                    type: "apiKey",
+                                    apiKey,
+                                  }
+                                  if (region === "cn") {
+                                    credentials.apiRegion = "cn"
+                                  }
+                                  await onSaveAccountCredentials(provider.id, account.id, credentials)
+                                  setZaiApiKeyDraftByAccount((previous) => ({
+                                    ...previous,
+                                    [account.id]: "",
+                                  }))
+                                  setNotice({
+                                    kind: "success",
+                                    text: `${provider.name} credentials saved`,
+                                  })
+                                })
+                              }
+                            >
+                              Save credentials
+                            </Button>
+                          )}
+                          {supportsJsonCredentials && (
                             <Button
                               type="button"
                               size="xs"
@@ -598,10 +797,15 @@ export function ProviderAccountsSection({
                             )}
                           </div>
                         )}
-                      </div>
+                        </>
+                          )
+                        }}
+                      </SortableAccountCard>
                     )
                   })}
-                </div>
+                    </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           )

@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use account_store::AccountStore;
 use auth::{AuthState, PendingOAuth};
+use futures::future::join_all;
 use models::{AccountRecord, CreateAccountInput, UpdateAccountInput};
 use providers::{
     find_provider_contract, validate_auth_strategy_for_provider, ProviderDescriptor,
@@ -101,12 +102,15 @@ async fn start_provider_probe_batch(
         });
     }
 
-    for provider_id in &selected_ids {
-        let output = match probe::probe_provider(&app_handle, store.inner(), provider_id).await {
+    let outputs = join_all(selected_ids.iter().map(|provider_id| async {
+        match probe::probe_provider(&app_handle, store.inner(), provider_id).await {
             Ok(output) => output,
             Err(err) => probe::build_error_output(provider_id, err.to_string()),
-        };
+        }
+    }))
+    .await;
 
+    for output in outputs {
         app_handle
             .emit(
                 "probe:result",
