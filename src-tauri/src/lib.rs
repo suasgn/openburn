@@ -9,11 +9,156 @@ mod utils;
 use account_store::AccountStore;
 use models::{AccountRecord, CreateAccountInput, UpdateAccountInput};
 use providers::ProviderDescriptor;
-use tauri::{Manager, State};
+use serde_json::{json, Value};
+use tauri::{Emitter, Manager, State};
+use time::format_description::well_known::Rfc3339;
+use time::{Duration, OffsetDateTime};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn init_panel() -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_panel() -> Result<(), String> {
+    Ok(())
+}
+
+fn provider_brand(id: &str) -> (&'static str, &'static str, &'static str) {
+    match id {
+        "codex" => ("/vite.svg", "#0EA5E9", "Pro"),
+        "copilot" => ("/tauri.svg", "#8B5CF6", "Business"),
+        "claude" => ("/tauri.svg", "#D97706", "Max"),
+        "zai" => ("/vite.svg", "#14B8A6", "Standard"),
+        _ => ("/vite.svg", "#6B7280", "Standard"),
+    }
+}
+
+fn build_mock_provider_output(provider: &ProviderDescriptor) -> Value {
+    let (icon_url, brand_color, plan) = provider_brand(provider.id);
+
+    let seed = provider
+        .id
+        .bytes()
+        .fold(0u32, |acc, byte| acc.wrapping_add(byte as u32));
+    let limit = 100.0f64;
+    let used = 20.0f64 + (seed % 70) as f64;
+    let request_count = 300 + ((seed * 13) % 1400);
+    let status_text = if used < 60.0 {
+        "Healthy"
+    } else if used < 85.0 {
+        "Watch"
+    } else {
+        "High"
+    };
+
+    let resets_at = (OffsetDateTime::now_utc() + Duration::days(7))
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "2099-01-01T00:00:00Z".to_string());
+
+    json!({
+        "providerId": provider.id,
+        "displayName": provider.name,
+        "plan": plan,
+        "iconUrl": icon_url,
+        "lines": [
+            {
+                "type": "progress",
+                "label": "Weekly usage",
+                "used": used,
+                "limit": limit,
+                "format": { "kind": "percent" },
+                "resetsAt": resets_at,
+                "periodDurationMs": 604_800_000,
+                "color": brand_color
+            },
+            {
+                "type": "badge",
+                "label": "Status",
+                "text": status_text,
+                "color": brand_color,
+                "subtitle": "Mock provider data"
+            },
+            {
+                "type": "text",
+                "label": "Requests",
+                "value": request_count.to_string(),
+                "subtitle": "Current period"
+            }
+        ]
+    })
+}
+
+#[tauri::command]
+fn list_providers_meta() -> Vec<Value> {
+    providers::all_provider_descriptors()
+        .into_iter()
+        .map(|provider| {
+            let (icon_url, brand_color, _) = provider_brand(provider.id);
+            json!({
+                "id": provider.id,
+                "name": provider.name,
+                "iconUrl": icon_url,
+                "brandColor": brand_color,
+                "lines": [
+                    { "type": "progress", "label": "Weekly usage", "scope": "overview" },
+                    { "type": "badge", "label": "Status", "scope": "overview" },
+                    { "type": "text", "label": "Requests", "scope": "detail" }
+                ],
+                "primaryCandidates": ["Weekly usage"]
+            })
+        })
+        .collect()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn start_provider_probe_batch(
+    app: tauri::AppHandle,
+    batch_id: String,
+    provider_ids: Option<Vec<String>>,
+) -> Result<Value, String> {
+    let providers = providers::all_provider_descriptors();
+    let all_ids: Vec<String> = providers
+        .iter()
+        .map(|provider| provider.id.to_string())
+        .collect();
+
+    let selected_ids = if let Some(requested) = provider_ids {
+        requested
+            .into_iter()
+            .filter(|id| all_ids.iter().any(|known| known == id))
+            .collect::<Vec<_>>()
+    } else {
+        all_ids.clone()
+    };
+
+    for provider in providers
+        .iter()
+        .filter(|provider| selected_ids.iter().any(|id| id == provider.id))
+    {
+        let output = build_mock_provider_output(provider);
+        app.emit(
+            "probe:result",
+            json!({
+                "batchId": batch_id,
+                "output": output,
+            }),
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    app.emit("probe:batch-complete", json!({ "batchId": batch_id }))
+        .map_err(|err| err.to_string())?;
+
+    Ok(json!({
+        "batchId": batch_id,
+        "providerIds": selected_ids,
+    }))
 }
 
 #[tauri::command]
@@ -94,7 +239,13 @@ fn clear_account_credentials(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let context = tauri::generate_context!();
+    let has_updater_config = matches!(
+        context.config().plugins.0.get("updater"),
+        Some(value) if value.is_object()
+    );
+
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_keyring::init())
         .setup(|app| {
             let store = AccountStore::load(app.handle())
@@ -102,9 +253,22 @@ pub fn run() {
             app.manage(store);
             Ok(())
         })
+        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
+    if has_updater_config {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            init_panel,
+            hide_panel,
+            list_providers_meta,
+            start_provider_probe_batch,
             list_providers,
             list_accounts,
             get_account,
@@ -115,6 +279,6 @@ pub fn run() {
             has_account_credentials,
             clear_account_credentials
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

@@ -12,9 +12,13 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "openburn",
-        "width": 800,
-        "height": 600
+        "width": 400,
+        "height": 500,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {
