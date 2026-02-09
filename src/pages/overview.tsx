@@ -29,7 +29,6 @@ export function OverviewPage({ providers, onRetryProvider, displayMode }: Overvi
           error={provider.error}
           lines={provider.data?.lines ?? []}
           skeletonLines={provider.meta.lines}
-          lastManualRefreshAt={provider.lastManualRefreshAt}
           onRetry={onRetryProvider ? () => onRetryProvider(provider.meta.id) : undefined}
           scopeFilter="overview"
           displayMode={displayMode}

@@ -26,7 +26,6 @@ export function ProviderDetailPage({ provider, onRetry, displayMode }: ProviderD
       error={provider.error}
       lines={provider.data?.lines ?? []}
       skeletonLines={provider.meta.lines}
-      lastManualRefreshAt={provider.lastManualRefreshAt}
       onRetry={onRetry}
       scopeFilter="all"
       displayMode={displayMode}

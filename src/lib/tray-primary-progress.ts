@@ -24,6 +24,20 @@ function isProgressLine(line: ProviderOutput["lines"][number]): line is Progress
   return line.type === "progress"
 }
 
+function aggregateFraction(lines: ProgressLine[], displayMode: DisplayMode): number | undefined {
+  const valid = lines.filter(
+    (line) => Number.isFinite(line.limit) && line.limit > 0 && Number.isFinite(line.used)
+  )
+  if (valid.length === 0) return undefined
+
+  const totalLimit = valid.reduce((sum, line) => sum + line.limit, 0)
+  if (!Number.isFinite(totalLimit) || totalLimit <= 0) return undefined
+
+  const totalUsed = valid.reduce((sum, line) => sum + line.used, 0)
+  const shownAmount = displayMode === "used" ? totalUsed : totalLimit - totalUsed
+  return clamp01(shownAmount / totalLimit)
+}
+
 export function getTrayPrimaryBars(args: {
   providersMeta: ProviderMeta[]
   providerSettings: ProviderSettings | null
@@ -56,16 +70,13 @@ export function getTrayPrimaryBars(args: {
         data.lines.some((line) => isProgressLine(line) && getBaseMetricLabel(line.label) === label)
       )
       if (primaryLabel) {
-        const primaryLine = data.lines.find(
+        const matchingLines = data.lines.filter(
           (line): line is ProgressLine =>
             isProgressLine(line) && getBaseMetricLabel(line.label) === primaryLabel
         )
-        if (primaryLine && primaryLine.limit > 0) {
-          const shownAmount =
-            displayMode === "used"
-              ? primaryLine.used
-              : primaryLine.limit - primaryLine.used
-          fraction = clamp01(shownAmount / primaryLine.limit)
+        const aggregated = aggregateFraction(matchingLines, displayMode)
+        if (typeof aggregated === "number") {
+          fraction = aggregated
         }
       }
     }

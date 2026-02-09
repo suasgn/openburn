@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { Hourglass, RefreshCw } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SkeletonLines } from "@/components/skeleton-lines"
 import { ProviderError } from "@/components/provider-error"
 import { useNowTicker } from "@/hooks/use-now-ticker"
-import { REFRESH_COOLDOWN_MS, type DisplayMode } from "@/lib/settings"
+import { type DisplayMode } from "@/lib/settings"
 import type { ManifestLine, MetricLine } from "@/lib/provider-types"
 import { clamp01 } from "@/lib/utils"
 import { calculatePaceStatus, type PaceStatus } from "@/lib/pace-status"
@@ -23,7 +23,6 @@ interface ProviderCardProps {
   error?: string | null
   lines?: MetricLine[]
   skeletonLines?: ManifestLine[]
-  lastManualRefreshAt?: number | null
   onRetry?: () => void
   scopeFilter?: "overview" | "all"
   displayMode: DisplayMode
@@ -55,21 +54,25 @@ function formatResetIn(nowMs: number, resetsAtIso: string): string | null {
 
 type AccountLineGroup = {
   accountLabel: string
+  accountId: string | null
+  plan: string | null
   lines: MetricLine[]
 }
 
 function removeAccountPrefix(line: MetricLine): {
   accountLabel: string | null
+  accountId: string | null
   line: MetricLine
 } {
-  const { accountLabel, metricLabel } = splitAccountScopedLabel(line.label)
+  const { accountLabel, accountId, metricLabel } = splitAccountScopedLabel(line.label)
   if (!accountLabel) {
-    return { accountLabel: null, line }
+    return { accountLabel: null, accountId: null, line }
   }
 
   if (line.type === "progress") {
     return {
       accountLabel,
+      accountId,
       line: {
         ...line,
         label: metricLabel,
@@ -80,6 +83,7 @@ function removeAccountPrefix(line: MetricLine): {
   if (line.type === "text") {
     return {
       accountLabel,
+      accountId,
       line: {
         ...line,
         label: metricLabel,
@@ -89,6 +93,7 @@ function removeAccountPrefix(line: MetricLine): {
 
   return {
     accountLabel,
+    accountId,
     line: {
       ...line,
       label: metricLabel,
@@ -148,17 +153,10 @@ export function ProviderCard({
   error = null,
   lines = [],
   skeletonLines = [],
-  lastManualRefreshAt,
   onRetry,
   scopeFilter = "all",
   displayMode,
 }: ProviderCardProps) {
-  const cooldownRemainingMs = useMemo(() => {
-    if (!lastManualRefreshAt) return 0
-    const remaining = REFRESH_COOLDOWN_MS - (Date.now() - lastManualRefreshAt)
-    return remaining > 0 ? remaining : 0
-  }, [lastManualRefreshAt])
-
   // Filter lines based on scope - match by label since runtime lines can differ from manifest
   const overviewLabels = new Set(
     skeletonLines
@@ -175,7 +173,7 @@ export function ProviderCard({
   const groupedLines = useMemo(() => {
     const ungrouped: MetricLine[] = []
     const groups: AccountLineGroup[] = []
-    const byAccount = new Map<string, MetricLine[]>()
+    const byAccount = new Map<string, AccountLineGroup>()
 
     for (const line of filteredLines) {
       const scoped = removeAccountPrefix(line)
@@ -184,13 +182,25 @@ export function ProviderCard({
         continue
       }
 
-      let bucket = byAccount.get(scoped.accountLabel)
-      if (!bucket) {
-        bucket = []
-        byAccount.set(scoped.accountLabel, bucket)
-        groups.push({ accountLabel: scoped.accountLabel, lines: bucket })
+      const groupKey = `${scoped.accountLabel}::${scoped.accountId ?? ""}`
+      let group = byAccount.get(groupKey)
+      if (!group) {
+        group = {
+          accountLabel: scoped.accountLabel,
+          accountId: scoped.accountId,
+          plan: null,
+          lines: [],
+        }
+        byAccount.set(groupKey, group)
+        groups.push(group)
       }
-      bucket.push(scoped.line)
+
+      if (scoped.line.type === "badge" && scoped.line.label === "Plan") {
+        group.plan = scoped.line.text
+        continue
+      }
+
+      group.lines.push(scoped.line)
     }
 
     return { ungrouped, groups }
@@ -201,28 +211,10 @@ export function ProviderCard({
   )
 
   const now = useNowTicker({
-    enabled: cooldownRemainingMs > 0 || hasResetCountdown,
-    intervalMs: cooldownRemainingMs > 0 ? 1000 : 30_000,
-    stopAfterMs: cooldownRemainingMs > 0 && !hasResetCountdown ? cooldownRemainingMs : null,
+    enabled: hasResetCountdown,
+    intervalMs: 30_000,
+    stopAfterMs: null,
   })
-
-  const inCooldown = lastManualRefreshAt
-    ? now - lastManualRefreshAt < REFRESH_COOLDOWN_MS
-    : false
-
-  // Format remaining cooldown time as "Xm Ys"
-  const formatRemainingTime = () => {
-    if (!lastManualRefreshAt) return ""
-    const remainingMs = REFRESH_COOLDOWN_MS - (now - lastManualRefreshAt)
-    if (remainingMs <= 0) return ""
-    const totalSeconds = Math.ceil(remainingMs / 1000)
-    const minutes = Math.floor(totalSeconds / 60)
-    const seconds = totalSeconds % 60
-    if (minutes > 0) {
-      return `Available in ${minutes}m ${seconds}s`
-    }
-    return `Available in ${seconds}s`
-  }
 
   return (
     <div>
@@ -241,28 +233,6 @@ export function ProviderCard({
                 >
                   <RefreshCw className="h-3 w-3 animate-spin" />
                 </Button>
-              ) : inCooldown ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    className="ml-1"
-                    render={(props) => (
-                      <span {...props} className={props.className}>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="pointer-events-none opacity-50"
-                          style={{ transform: "translateZ(0)", backfaceVisibility: "hidden" }}
-                          tabIndex={-1}
-                        >
-                          <Hourglass className="h-3 w-3" />
-                        </Button>
-                      </span>
-                    )}
-                  />
-                  <TooltipContent side="top">
-                    {formatRemainingTime()}
-                  </TooltipContent>
-                </Tooltip>
               ) : (
                 <Button
                   variant="ghost"
@@ -308,8 +278,30 @@ export function ProviderCard({
             ))}
 
             {groupedLines.groups.map((group) => (
-              <div key={group.accountLabel} className="rounded-md border bg-muted/40 p-2">
-                <p className="text-xs text-muted-foreground font-medium mb-2">{group.accountLabel}</p>
+              <div key={`${group.accountLabel}:${group.accountId ?? ""}`} className="rounded-md border bg-muted/40 p-2">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  {group.accountId ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
+                          <p {...props} className="text-xs text-muted-foreground font-medium">
+                            {group.accountLabel}
+                          </p>
+                        )}
+                      />
+                      <TooltipContent side="top" className="text-xs">
+                        Account ID: {group.accountId}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <p className="text-xs text-muted-foreground font-medium">{group.accountLabel}</p>
+                  )}
+                  {group.plan && (
+                    <Badge variant="outline" className="truncate min-w-0 max-w-[60%]" title={group.plan}>
+                      {group.plan}
+                    </Badge>
+                  )}
+                </div>
                 <div className="space-y-4">
                   {group.lines.map((line, index) => (
                     <MetricLineRenderer

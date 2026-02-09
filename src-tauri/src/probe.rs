@@ -13,6 +13,7 @@ use crate::secrets;
 const PERIOD_5_HOURS_MS: u64 = 5 * 60 * 60 * 1000;
 const PERIOD_7_DAYS_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 const PERIOD_30_DAYS_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+const ACCOUNT_META_DELIMITER: &str = " @@ ";
 const ACCOUNT_LABEL_DELIMITER: &str = " :: ";
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,6 +108,12 @@ struct ProbeSuccess {
     plan: Option<String>,
     lines: Vec<MetricLine>,
     updated_credentials: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+struct AccountScope {
+    label: String,
+    id: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -319,12 +326,15 @@ pub async fn probe_provider(
 
     let mut had_credentials = false;
     let mut last_error: Option<BackendError> = None;
-    let mut successes: Vec<(String, ProbeSuccess)> = Vec::new();
-    let mut account_errors: Vec<(String, String)> = Vec::new();
+    let mut successes: Vec<(AccountScope, ProbeSuccess)> = Vec::new();
+    let mut account_errors: Vec<(AccountScope, String)> = Vec::new();
     let has_multiple_accounts = accounts.len() > 1;
 
     for account in accounts {
-        let account_label = normalized_account_label(&account.label, &account.id);
+        let account_scope = AccountScope {
+            label: normalized_account_label(&account.label, &account.id),
+            id: account.id.clone(),
+        };
         let credentials = match secrets::get_account_credentials(app, store, &account.id)? {
             Some(value) => {
                 had_credentials = true;
@@ -350,12 +360,12 @@ pub async fn probe_provider(
                     let _ = secrets::set_account_credentials(app, store, &account.id, &updated);
                 }
                 let _ = store.record_probe_success(&account.id);
-                successes.push((account_label, success));
+                successes.push((account_scope, success));
             }
             Err(err) => {
                 let message = err.to_string();
                 let _ = store.record_probe_error(&account.id, &message);
-                account_errors.push((account_label, message));
+                account_errors.push((account_scope, message));
                 last_error = Some(err);
             }
         }
@@ -386,25 +396,31 @@ pub async fn probe_provider(
         }
     }
 
-    let success_count = successes.len();
-    let mut plan_labels: Vec<String> = Vec::new();
     let mut lines: Vec<MetricLine> = Vec::new();
 
-    for (account_label, success) in successes {
+    for (account_scope, success) in successes {
         if let Some(plan) = success.plan.as_ref().map(|value| value.trim()) {
-            if !plan.is_empty() && !plan_labels.iter().any(|item| item == plan) {
-                plan_labels.push(plan.to_string());
+            if !plan.is_empty() {
+                lines.push(prefix_metric_line(
+                    MetricLine::Badge {
+                        label: "Plan".to_string(),
+                        text: plan.to_string(),
+                        color: None,
+                        subtitle: None,
+                    },
+                    &account_scope,
+                ));
             }
         }
 
         for line in success.lines {
-            lines.push(prefix_metric_line(line, &account_label));
+            lines.push(prefix_metric_line(line, &account_scope));
         }
     }
 
-    for (account_label, error_message) in account_errors {
+    for (account_scope, error_message) in account_errors {
         lines.push(MetricLine::Badge {
-            label: account_scoped_label(&account_label, "Error"),
+            label: account_scoped_label(&account_scope, "Error"),
             text: error_message,
             color: Some("#ef4444".to_string()),
             subtitle: None,
@@ -415,20 +431,10 @@ pub async fn probe_provider(
         lines.push(status_line("No usage data"));
     }
 
-    let plan = if has_multiple_accounts {
-        if let Some(single_plan) = plan_labels.first().filter(|_| plan_labels.len() == 1) {
-            Some(format!("{} ({} accounts)", single_plan, success_count))
-        } else {
-            Some(format!("{} accounts", success_count))
-        }
-    } else {
-        plan_labels.first().cloned()
-    };
-
     Ok(ProviderOutput {
         provider_id: provider_id.to_string(),
         display_name: spec.name.to_string(),
-        plan,
+        plan: None,
         lines,
         icon_url: spec.icon_url.to_string(),
     })
@@ -945,16 +951,18 @@ fn normalized_account_label(label: &str, account_id: &str) -> String {
     }
 }
 
-fn account_scoped_label(account_label: &str, line_label: &str) -> String {
+fn account_scoped_label(account_scope: &AccountScope, line_label: &str) -> String {
     format!(
-        "{}{}{}",
-        account_label.trim(),
+        "{}{}{}{}{}",
+        account_scope.label.trim(),
+        ACCOUNT_META_DELIMITER,
+        account_scope.id.trim(),
         ACCOUNT_LABEL_DELIMITER,
         line_label.trim()
     )
 }
 
-fn prefix_metric_line(line: MetricLine, account_label: &str) -> MetricLine {
+fn prefix_metric_line(line: MetricLine, account_scope: &AccountScope) -> MetricLine {
     match line {
         MetricLine::Text {
             label,
@@ -962,7 +970,7 @@ fn prefix_metric_line(line: MetricLine, account_label: &str) -> MetricLine {
             color,
             subtitle,
         } => MetricLine::Text {
-            label: account_scoped_label(account_label, &label),
+            label: account_scoped_label(account_scope, &label),
             value,
             color,
             subtitle,
@@ -976,7 +984,7 @@ fn prefix_metric_line(line: MetricLine, account_label: &str) -> MetricLine {
             period_duration_ms,
             color,
         } => MetricLine::Progress {
-            label: account_scoped_label(account_label, &label),
+            label: account_scoped_label(account_scope, &label),
             used,
             limit,
             format,
@@ -990,7 +998,7 @@ fn prefix_metric_line(line: MetricLine, account_label: &str) -> MetricLine {
             color,
             subtitle,
         } => MetricLine::Badge {
-            label: account_scoped_label(account_label, &label),
+            label: account_scoped_label(account_scope, &label),
             text,
             color,
             subtitle,
