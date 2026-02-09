@@ -218,7 +218,6 @@ interface SettingsPageProps {
   onTrayIconStyleChange: (value: TrayIconStyle) => void;
   trayShowPercentage: boolean;
   onTrayShowPercentageChange: (value: boolean) => void;
-  providerIconUrl?: string;
 }
 
 export function SettingsPage({
@@ -247,7 +246,6 @@ export function SettingsPage({
   onTrayIconStyleChange,
   trayShowPercentage,
   onTrayShowPercentageChange,
-  providerIconUrl,
 }: SettingsPageProps) {
   const percentageMandatory = isTrayPercentageMandatory(trayIconStyle);
   const trayShowPercentageChecked = percentageMandatory
@@ -259,7 +257,7 @@ export function SettingsPage({
       <section>
         <h3 className="text-lg font-semibold mb-0">Auto Refresh</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          How obsessive are you
+          Configure automatic refresh interval.
         </p>
         <div className="bg-muted/50 rounded-lg p-1">
           <div className="flex gap-1" role="radiogroup" aria-label="Auto-update interval">
@@ -286,7 +284,7 @@ export function SettingsPage({
       <section>
         <h3 className="text-lg font-semibold mb-0">Usage Mode</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          Glass half full or half empty
+          Display usage as remaining or consumed.
         </p>
         <div className="bg-muted/50 rounded-lg p-1">
           <div className="flex gap-1" role="radiogroup" aria-label="Usage display mode">
@@ -313,7 +311,7 @@ export function SettingsPage({
       <section>
         <h3 className="text-lg font-semibold mb-0">Bar Icon</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          The little guy up top
+          Configure menu bar icon and percentage.
         </p>
         <div className="bg-muted/50 rounded-lg p-1">
           <div className="flex gap-1" role="radiogroup" aria-label="Tray icon style">
@@ -334,7 +332,7 @@ export function SettingsPage({
                   <TrayIconStylePreview
                     style={option.value}
                     isActive={isActive}
-                    providerIconUrl={option.value === "provider" ? providerIconUrl : undefined}
+                    providerIconUrl={option.value === "provider" ? "/favicon.svg" : undefined}
                   />
                 </Button>
               );
@@ -364,7 +362,7 @@ export function SettingsPage({
       <section>
         <h3 className="text-lg font-semibold mb-0">App Theme</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          How it looks around here
+          Set application appearance.
         </p>
         <div className="bg-muted/50 rounded-lg p-1">
           <div className="flex gap-1" role="radiogroup" aria-label="Theme mode">

@@ -239,13 +239,7 @@ function App() {
       }
 
       const sizePx = getTrayIconSizePx(window.devicePixelRatio)
-      const firstProviderId = bars[0]?.id
-      const providerIconUrl =
-        style === "provider"
-          ? providersMetaRef.current.find((provider) => provider.id === firstProviderId)?.iconUrl
-          : undefined
-
-      renderTrayBarsIcon({ bars, sizePx, style, percentText, providerIconUrl })
+      renderTrayBarsIcon({ bars, sizePx, style, percentText })
         .then(async (img) => {
           await tray.setIcon(img)
           await tray.setIconAsTemplate(true)
@@ -1276,7 +1270,6 @@ function App() {
           onTrayIconStyleChange={handleTrayIconStyleChange}
           trayShowPercentage={trayShowPercentage}
           onTrayShowPercentageChange={handleTrayShowPercentageChange}
-          providerIconUrl={navProviders[0]?.iconUrl}
         />
       )
     }

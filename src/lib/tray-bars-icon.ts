@@ -2,6 +2,14 @@ import { Image } from "@tauri-apps/api/image"
 
 import type { TrayPrimaryBar } from "@/lib/tray-primary-progress"
 import type { TrayIconStyle } from "@/lib/settings"
+import appIconSvgRaw from "../assets/app-icon.svg?raw"
+
+function extractSvgBody(svgRaw: string): string {
+  const match = svgRaw.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i)
+  return (match?.[1] ?? svgRaw).trim()
+}
+
+const APP_ICON_MARKUP = extractSvgBody(appIconSvgRaw)
 
 function rgbaToImageDataBytes(rgba: Uint8ClampedArray): Uint8Array {
   // Image.new expects Uint8Array. Uint8ClampedArray shares the same buffer layout.
@@ -182,9 +190,8 @@ export function makeTrayBarsSvg(args: {
   sizePx: number
   style?: TrayIconStyle
   percentText?: string
-  providerIconUrl?: string
 }): string {
-  const { bars, sizePx, style = "bars", percentText, providerIconUrl } = args
+  const { bars, sizePx, style = "bars", percentText } = args
   const barsForStyle = getBarsForStyle(style, bars)
   const n = Math.max(1, Math.min(4, barsForStyle.length || 1))
   const text = normalizePercentText(style, percentText)
@@ -243,24 +250,13 @@ export function makeTrayBarsSvg(args: {
       }
     }
   } else if (style === "provider") {
-    const iconSize = Math.max(6, Math.round(sizePx - 2 * layout.pad * 0.5))
-    const x = layout.barsX
-    const y = Math.round((height - iconSize) / 2) + 1
-    const href = typeof providerIconUrl === "string" ? providerIconUrl.trim() : ""
-
-    if (href.length > 0) {
-      parts.push(
-        `<image x="${x}" y="${y}" width="${iconSize}" height="${iconSize}" href="${escapeXmlText(href)}" preserveAspectRatio="xMidYMid meet" />`
-      )
-    } else {
-      const cx = x + iconSize / 2
-      const cy = y + iconSize / 2
-      const radius = Math.max(2, iconSize / 2 - 1.5)
-      const strokeW = Math.max(1.5, Math.round(iconSize * 0.14))
-      parts.push(
-        `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="black" stroke-width="${strokeW}" opacity="${fillOpacity}" shape-rendering="geometricPrecision" />`
-      )
-    }
+    const iconSize = Math.max(8, Math.round(sizePx - 2 * layout.pad * 0.1))
+    const x = layout.barsX + Math.round((layout.barsWidth - iconSize) / 2)
+    const y = Math.round((height - iconSize) / 2)
+    const scale = iconSize / 24
+    parts.push(
+      `<g transform="translate(${x} ${y}) scale(${scale})" color="black" opacity="${fillOpacity}">${APP_ICON_MARKUP}</g>`
+    )
   } else if (style !== "textOnly") {
     for (let i = 0; i < n; i += 1) {
       const bar = barsForStyle[i]
@@ -358,16 +354,14 @@ export async function renderTrayBarsIcon(args: {
   sizePx: number
   style?: TrayIconStyle
   percentText?: string
-  providerIconUrl?: string
 }): Promise<Image> {
-  const { bars, sizePx, style = "bars", percentText, providerIconUrl } = args
+  const { bars, sizePx, style = "bars", percentText } = args
   const text = normalizePercentText(style, percentText)
   const svg = makeTrayBarsSvg({
     bars,
     sizePx,
     style,
     percentText: text,
-    providerIconUrl,
   })
   const layout = getSvgLayout({
     sizePx,

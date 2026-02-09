@@ -331,7 +331,7 @@ export function ProviderAccountsSection({
         <div>
           <h3 className="text-lg font-semibold mb-0">Accounts</h3>
           <p className="text-sm text-muted-foreground mb-2">
-            Add provider accounts and save credentials for probing
+            Manage accounts and credentials.
           </p>
         </div>
         <Button

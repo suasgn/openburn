@@ -2,13 +2,24 @@ import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import AutoImport from 'unplugin-auto-import/vite';
+import IconsResolver from 'unplugin-icons/resolver';
+import Icons from 'unplugin-icons/vite';
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), 
+    AutoImport({
+      resolvers: [
+        IconsResolver({
+          prefix: 'Icon',
+          extension: 'jsx',
+        }),
+      ],
+    }),Icons({ compiler: 'jsx', jsx: 'react', autoInstall: true, })],
 
   resolve: {
     alias: {
