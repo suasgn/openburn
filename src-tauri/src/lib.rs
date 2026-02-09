@@ -289,7 +289,7 @@ where
     .map_err(|err| err.to_string())?;
 
     let callback_path = normalized_callback_path(callback_path);
-    let redirect_uri = format!("http://127.0.0.1:{port}{callback_path}");
+    let redirect_uri = format!("http://localhost:{port}{callback_path}");
     let url = build_url(&redirect_uri, &pkce.challenge, &state)?;
     let request_id = Uuid::new_v4().to_string();
 

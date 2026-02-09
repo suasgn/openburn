@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertCircle, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -381,12 +380,6 @@ export function ProviderAccountsSection({
                             </p>
                           </div>
                           <div className="flex items-center gap-1">
-                            <Badge
-                              variant={account.hasCredentials ? "secondary" : "outline"}
-                              className="whitespace-nowrap"
-                            >
-                              {account.hasCredentials ? "Credentials set" : "Missing credentials"}
-                            </Badge>
                             <Button
                               type="button"
                               variant="ghost"
