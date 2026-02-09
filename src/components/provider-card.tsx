@@ -13,6 +13,7 @@ import type { ManifestLine, MetricLine } from "@/lib/provider-types"
 import { clamp01 } from "@/lib/utils"
 import { calculatePaceStatus, type PaceStatus } from "@/lib/pace-status"
 import { buildPaceDetailText, formatCompactDuration, getPaceStatusText } from "@/lib/pace-tooltip"
+import { getBaseMetricLabel, splitAccountScopedLabel } from "@/lib/account-scoped-label"
 
 interface ProviderCardProps {
   name: string
@@ -50,6 +51,49 @@ function formatResetIn(nowMs: number, resetsAtIso: string): string | null {
   if (deltaMs <= 0) return "Resets now"
   const durationText = formatCompactDuration(deltaMs)
   return durationText ? `Resets in ${durationText}` : "Resets in <1m"
+}
+
+type AccountLineGroup = {
+  accountLabel: string
+  lines: MetricLine[]
+}
+
+function removeAccountPrefix(line: MetricLine): {
+  accountLabel: string | null
+  line: MetricLine
+} {
+  const { accountLabel, metricLabel } = splitAccountScopedLabel(line.label)
+  if (!accountLabel) {
+    return { accountLabel: null, line }
+  }
+
+  if (line.type === "progress") {
+    return {
+      accountLabel,
+      line: {
+        ...line,
+        label: metricLabel,
+      },
+    }
+  }
+
+  if (line.type === "text") {
+    return {
+      accountLabel,
+      line: {
+        ...line,
+        label: metricLabel,
+      },
+    }
+  }
+
+  return {
+    accountLabel,
+    line: {
+      ...line,
+      label: metricLabel,
+    },
+  }
 }
 
 /** Colored dot indicator showing pace status */
@@ -126,7 +170,31 @@ export function ProviderCard({
     : skeletonLines.filter(line => line.scope === "overview")
   const filteredLines = scopeFilter === "all"
     ? lines
-    : lines.filter(line => overviewLabels.has(line.label))
+    : lines.filter((line) => line.type !== "progress" || overviewLabels.has(getBaseMetricLabel(line.label)))
+
+  const groupedLines = useMemo(() => {
+    const ungrouped: MetricLine[] = []
+    const groups: AccountLineGroup[] = []
+    const byAccount = new Map<string, MetricLine[]>()
+
+    for (const line of filteredLines) {
+      const scoped = removeAccountPrefix(line)
+      if (!scoped.accountLabel) {
+        ungrouped.push(scoped.line)
+        continue
+      }
+
+      let bucket = byAccount.get(scoped.accountLabel)
+      if (!bucket) {
+        bucket = []
+        byAccount.set(scoped.accountLabel, bucket)
+        groups.push({ accountLabel: scoped.accountLabel, lines: bucket })
+      }
+      bucket.push(scoped.line)
+    }
+
+    return { ungrouped, groups }
+  }, [filteredLines])
 
   const hasResetCountdown = filteredLines.some(
     (line) => line.type === "progress" && Boolean(line.resetsAt)
@@ -230,13 +298,29 @@ export function ProviderCard({
 
         {!loading && !error && (
           <div className="space-y-4">
-            {filteredLines.map((line, index) => (
+            {groupedLines.ungrouped.map((line, index) => (
               <MetricLineRenderer
-                key={`${line.label}-${index}`}
+                key={`plain-${line.label}-${index}`}
                 line={line}
                 displayMode={displayMode}
                 now={now}
               />
+            ))}
+
+            {groupedLines.groups.map((group) => (
+              <div key={group.accountLabel} className="rounded-md border bg-muted/40 p-2">
+                <p className="text-xs text-muted-foreground font-medium mb-2">{group.accountLabel}</p>
+                <div className="space-y-4">
+                  {group.lines.map((line, index) => (
+                    <MetricLineRenderer
+                      key={`${group.accountLabel}-${line.label}-${index}`}
+                      line={line}
+                      displayMode={displayMode}
+                      now={now}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

@@ -2,6 +2,7 @@ import type { ProviderMeta, ProviderOutput } from "@/lib/provider-types"
 import type { ProviderSettings } from "@/lib/settings"
 import { DEFAULT_DISPLAY_MODE, type DisplayMode } from "@/lib/settings"
 import { clamp01 } from "@/lib/utils"
+import { getBaseMetricLabel } from "@/lib/account-scoped-label"
 
 type ProviderState = {
   data: ProviderOutput | null
@@ -52,12 +53,12 @@ export function getTrayPrimaryBars(args: {
     if (data) {
       // Find first candidate that exists in runtime data
       const primaryLabel = meta.primaryCandidates.find((label) =>
-        data.lines.some((line) => isProgressLine(line) && line.label === label)
+        data.lines.some((line) => isProgressLine(line) && getBaseMetricLabel(line.label) === label)
       )
       if (primaryLabel) {
         const primaryLine = data.lines.find(
           (line): line is ProgressLine =>
-            isProgressLine(line) && line.label === primaryLabel
+            isProgressLine(line) && getBaseMetricLabel(line.label) === primaryLabel
         )
         if (primaryLine && primaryLine.limit > 0) {
           const shownAmount =

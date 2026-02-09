@@ -13,6 +13,7 @@ use crate::secrets;
 const PERIOD_5_HOURS_MS: u64 = 5 * 60 * 60 * 1000;
 const PERIOD_7_DAYS_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 const PERIOD_30_DAYS_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+const ACCOUNT_LABEL_DELIMITER: &str = " :: ";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -295,11 +296,19 @@ pub async fn probe_provider(
         BackendError::Provider(format!("provider '{}' is not registered", provider_id))
     })?;
 
-    let accounts = store
+    let mut accounts = store
         .list_accounts()?
         .into_iter()
         .filter(|account| account.provider_id == provider_id)
         .collect::<Vec<_>>();
+
+    accounts.sort_by(|left, right| {
+        let left_key = left.label.to_ascii_lowercase();
+        let right_key = right.label.to_ascii_lowercase();
+        left_key
+            .cmp(&right_key)
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     if accounts.is_empty() {
         return Err(BackendError::Provider(format!(
@@ -310,8 +319,12 @@ pub async fn probe_provider(
 
     let mut had_credentials = false;
     let mut last_error: Option<BackendError> = None;
+    let mut successes: Vec<(String, ProbeSuccess)> = Vec::new();
+    let mut account_errors: Vec<(String, String)> = Vec::new();
+    let has_multiple_accounts = accounts.len() > 1;
 
     for account in accounts {
+        let account_label = normalized_account_label(&account.label, &account.id);
         let credentials = match secrets::get_account_credentials(app, store, &account.id)? {
             Some(value) => {
                 had_credentials = true;
@@ -333,20 +346,16 @@ pub async fn probe_provider(
 
         match result {
             Ok(success) => {
-                if let Some(updated) = success.updated_credentials {
+                if let Some(updated) = success.updated_credentials.clone() {
                     let _ = secrets::set_account_credentials(app, store, &account.id, &updated);
                 }
                 let _ = store.record_probe_success(&account.id);
-                return Ok(ProviderOutput {
-                    provider_id: provider_id.to_string(),
-                    display_name: spec.name.to_string(),
-                    plan: success.plan,
-                    lines: success.lines,
-                    icon_url: spec.icon_url.to_string(),
-                });
+                successes.push((account_label, success));
             }
             Err(err) => {
-                let _ = store.record_probe_error(&account.id, &err.to_string());
+                let message = err.to_string();
+                let _ = store.record_probe_error(&account.id, &message);
+                account_errors.push((account_label, message));
                 last_error = Some(err);
             }
         }
@@ -359,8 +368,70 @@ pub async fn probe_provider(
         )));
     }
 
-    Err(last_error
-        .unwrap_or_else(|| BackendError::Provider(format!("Failed to fetch {} usage", spec.name))))
+    if successes.is_empty() {
+        return Err(last_error.unwrap_or_else(|| {
+            BackendError::Provider(format!("Failed to fetch {} usage", spec.name))
+        }));
+    }
+
+    if !has_multiple_accounts && account_errors.is_empty() {
+        if let Some((_, success)) = successes.first() {
+            return Ok(ProviderOutput {
+                provider_id: provider_id.to_string(),
+                display_name: spec.name.to_string(),
+                plan: success.plan.clone(),
+                lines: success.lines.clone(),
+                icon_url: spec.icon_url.to_string(),
+            });
+        }
+    }
+
+    let success_count = successes.len();
+    let mut plan_labels: Vec<String> = Vec::new();
+    let mut lines: Vec<MetricLine> = Vec::new();
+
+    for (account_label, success) in successes {
+        if let Some(plan) = success.plan.as_ref().map(|value| value.trim()) {
+            if !plan.is_empty() && !plan_labels.iter().any(|item| item == plan) {
+                plan_labels.push(plan.to_string());
+            }
+        }
+
+        for line in success.lines {
+            lines.push(prefix_metric_line(line, &account_label));
+        }
+    }
+
+    for (account_label, error_message) in account_errors {
+        lines.push(MetricLine::Badge {
+            label: account_scoped_label(&account_label, "Error"),
+            text: error_message,
+            color: Some("#ef4444".to_string()),
+            subtitle: None,
+        });
+    }
+
+    if lines.is_empty() {
+        lines.push(status_line("No usage data"));
+    }
+
+    let plan = if has_multiple_accounts {
+        if let Some(single_plan) = plan_labels.first().filter(|_| plan_labels.len() == 1) {
+            Some(format!("{} ({} accounts)", single_plan, success_count))
+        } else {
+            Some(format!("{} accounts", success_count))
+        }
+    } else {
+        plan_labels.first().cloned()
+    };
+
+    Ok(ProviderOutput {
+        provider_id: provider_id.to_string(),
+        display_name: spec.name.to_string(),
+        plan,
+        lines,
+        icon_url: spec.icon_url.to_string(),
+    })
 }
 
 async fn probe_codex(credentials: serde_json::Value) -> Result<ProbeSuccess> {
@@ -857,6 +928,73 @@ fn error_line(message: String) -> MetricLine {
         text: message,
         color: Some("#ef4444".to_string()),
         subtitle: None,
+    }
+}
+
+fn normalized_account_label(label: &str, account_id: &str) -> String {
+    let trimmed = label.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+
+    let short_id = account_id.chars().take(8).collect::<String>();
+    if short_id.is_empty() {
+        "Account".to_string()
+    } else {
+        format!("Account {}", short_id)
+    }
+}
+
+fn account_scoped_label(account_label: &str, line_label: &str) -> String {
+    format!(
+        "{}{}{}",
+        account_label.trim(),
+        ACCOUNT_LABEL_DELIMITER,
+        line_label.trim()
+    )
+}
+
+fn prefix_metric_line(line: MetricLine, account_label: &str) -> MetricLine {
+    match line {
+        MetricLine::Text {
+            label,
+            value,
+            color,
+            subtitle,
+        } => MetricLine::Text {
+            label: account_scoped_label(account_label, &label),
+            value,
+            color,
+            subtitle,
+        },
+        MetricLine::Progress {
+            label,
+            used,
+            limit,
+            format,
+            resets_at,
+            period_duration_ms,
+            color,
+        } => MetricLine::Progress {
+            label: account_scoped_label(account_label, &label),
+            used,
+            limit,
+            format,
+            resets_at,
+            period_duration_ms,
+            color,
+        },
+        MetricLine::Badge {
+            label,
+            text,
+            color,
+            subtitle,
+        } => MetricLine::Badge {
+            label: account_scoped_label(account_label, &label),
+            text,
+            color,
+            subtitle,
+        },
     }
 }
 
