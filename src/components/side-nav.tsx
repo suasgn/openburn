@@ -1,6 +1,4 @@
-import { CircleHelp, Settings } from "lucide-react"
-import { openUrl } from "@tauri-apps/plugin-opener"
-import { invoke } from "@tauri-apps/api/core"
+import { Settings } from "lucide-react"
 
 function GaugeIcon({ className }: { className?: string }) {
   return (

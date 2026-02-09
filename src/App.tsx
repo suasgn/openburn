@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow, PhysicalSize, currentMonitor } from "@tauri-apps/api/window"
 import { getVersion } from "@tauri-apps/api/app"
 import { resolveResource } from "@tauri-apps/api/path"
+import { openUrl } from "@tauri-apps/plugin-opener"
 import { TrayIcon } from "@tauri-apps/api/tray"
 import { SideNav, type ActiveView } from "@/components/side-nav"
 import { PanelFooter } from "@/components/panel-footer"
@@ -13,13 +14,23 @@ import { SettingsPage } from "@/pages/settings"
 import type { ProviderMeta, ProviderOutput } from "@/lib/provider-types"
 import {
   clearAccountCredentials,
+  cancelClaudeOAuth,
+  cancelCodexOAuth,
+  cancelCopilotOAuth,
   createAccount,
   deleteAccount,
+  finishClaudeOAuth,
+  finishCodexOAuth,
+  finishCopilotOAuth,
   hasAccountCredentials,
   listAccounts,
   listProviders,
   setAccountCredentials,
+  startClaudeOAuth,
+  startCodexOAuth,
+  startCopilotOAuth,
   updateAccount,
+  type OAuthStartResponse,
   type AccountRecord,
   type ProviderDescriptor,
 } from "@/lib/accounts"
@@ -71,6 +82,15 @@ type ProviderState = {
   lastManualRefreshAt: number | null
 }
 
+type AccountOAuthSession = {
+  status: "pending" | "error"
+  providerId: string
+  requestId: string
+  url?: string
+  userCode?: string | null
+  message?: string
+}
+
 function App() {
   const [activeView, setActiveView] = useState<ActiveView>("home");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,6 +101,9 @@ function App() {
   const [providerDescriptors, setProviderDescriptors] = useState<ProviderDescriptor[]>([])
   const [accounts, setAccounts] = useState<AccountRecord[]>([])
   const [accountCredentialsById, setAccountCredentialsById] = useState<Record<string, boolean>>({})
+  const [accountOAuthSessionById, setAccountOAuthSessionById] = useState<
+    Record<string, AccountOAuthSession | undefined>
+  >({})
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [providerSettings, setProviderSettings] = useState<ProviderSettings | null>(null)
   const [autoUpdateInterval, setAutoUpdateInterval] = useState<AutoUpdateIntervalMinutes>(
@@ -107,6 +130,7 @@ function App() {
   const isMountedRef = useRef(true)
 
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
       isMountedRef.current = false
     }
@@ -638,6 +662,131 @@ function App() {
     [reloadAccounts, triggerProviderProbe],
   )
 
+  const startProviderOAuth = useCallback(
+    async (providerId: string, accountId: string): Promise<OAuthStartResponse> => {
+      if (providerId === "codex") {
+        return startCodexOAuth(accountId)
+      }
+      if (providerId === "claude") {
+        return startClaudeOAuth(accountId)
+      }
+      if (providerId === "copilot") {
+        return startCopilotOAuth(accountId)
+      }
+      throw new Error(`Provider does not support native OAuth: ${providerId}`)
+    },
+    [],
+  )
+
+  const finishProviderOAuth = useCallback(
+    async (providerId: string, requestId: string) => {
+      if (providerId === "codex") {
+        return finishCodexOAuth(requestId, 180_000)
+      }
+      if (providerId === "claude") {
+        return finishClaudeOAuth(requestId, 180_000)
+      }
+      if (providerId === "copilot") {
+        return finishCopilotOAuth(requestId, 180_000)
+      }
+      throw new Error(`Provider does not support native OAuth: ${providerId}`)
+    },
+    [],
+  )
+
+  const cancelProviderOAuth = useCallback(
+    async (providerId: string, requestId: string) => {
+      if (providerId === "codex") {
+        await cancelCodexOAuth(requestId)
+        return
+      }
+      if (providerId === "claude") {
+        await cancelClaudeOAuth(requestId)
+        return
+      }
+      if (providerId === "copilot") {
+        await cancelCopilotOAuth(requestId)
+        return
+      }
+      throw new Error(`Provider does not support native OAuth: ${providerId}`)
+    },
+    [],
+  )
+
+  const handleStartAccountOAuth = useCallback(
+    async (providerId: string, accountId: string) => {
+      const started = await startProviderOAuth(providerId, accountId)
+      if (!isMountedRef.current) return
+
+      setAccountOAuthSessionById((previous) => ({
+        ...previous,
+        [accountId]: {
+          status: "pending",
+          providerId,
+          requestId: started.requestId,
+          url: started.url,
+          userCode: started.userCode,
+        },
+      }))
+
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(started.url).catch((error) => {
+          console.error("Failed to copy OAuth URL:", error)
+        })
+      }
+
+      openUrl(started.url).catch((error) => {
+        console.error("Failed to open OAuth URL:", error)
+      })
+
+      void (async () => {
+        try {
+          await finishProviderOAuth(providerId, started.requestId)
+          if (!isMountedRef.current) return
+          setAccountOAuthSessionById((previous) => ({
+            ...previous,
+            [accountId]: undefined,
+          }))
+          await reloadAccounts()
+          triggerProviderProbe(providerId)
+        } catch (error) {
+          if (!isMountedRef.current) return
+          const message = error instanceof Error ? error.message : String(error)
+          const isTimeoutError = /timed out|timeout/i.test(message)
+          setAccountOAuthSessionById((previous) => ({
+            ...previous,
+            [accountId]: isTimeoutError
+              ? undefined
+              : {
+                  status: "error",
+                  providerId,
+                  requestId: started.requestId,
+                  message,
+                },
+          }))
+        }
+      })()
+    },
+    [finishProviderOAuth, reloadAccounts, startProviderOAuth, triggerProviderProbe],
+  )
+
+  const handleCancelAccountOAuth = useCallback(
+    async (providerId: string, accountId: string) => {
+      const session = accountOAuthSessionById[accountId]
+      if (!session?.requestId) {
+        return
+      }
+
+      await cancelProviderOAuth(providerId, session.requestId)
+      if (!isMountedRef.current) return
+      setAccountOAuthSessionById((previous) => ({
+        ...previous,
+        [accountId]: undefined,
+      }))
+    },
+    [accountOAuthSessionById, cancelProviderOAuth],
+  )
+
   useEffect(() => {
     let isMounted = true
 
@@ -707,21 +856,22 @@ function App() {
           setDisplayMode(storedDisplayMode)
           setTrayIconStyle(storedTrayIconStyle)
           setTrayShowPercentage(normalizedTrayShowPercentage)
-          const enabledIds = getEnabledProviderIds(normalized)
-          setLoadingForProviders(enabledIds)
-          try {
-            await startBatch(enabledIds)
-          } catch (error) {
-            console.error("Failed to start probe batch:", error)
-            if (isMounted) {
-              setErrorForProviders(enabledIds, "Failed to start probe")
-            }
-          }
 
           try {
             await reloadAccounts()
           } catch (error) {
             console.error("Failed to load accounts:", error)
+          }
+
+          const enabledIds = getEnabledProviderIds(normalized)
+          setLoadingForProviders(enabledIds)
+          if (enabledIds.length > 0) {
+            startBatch(enabledIds).catch((error) => {
+              console.error("Failed to start probe batch:", error)
+              if (isMounted) {
+                setErrorForProviders(enabledIds, "Failed to start probe")
+              }
+            })
           }
         }
 
@@ -1008,6 +1158,9 @@ function App() {
           onDeleteAccount={handleDeleteProviderAccount}
           onSaveAccountCredentials={handleSaveProviderAccountCredentials}
           onClearAccountCredentials={handleClearProviderAccountCredentials}
+          accountOAuthSessionById={accountOAuthSessionById}
+          onStartAccountOAuth={handleStartAccountOAuth}
+          onCancelAccountOAuth={handleCancelAccountOAuth}
           autoUpdateInterval={autoUpdateInterval}
           onAutoUpdateIntervalChange={handleAutoUpdateIntervalChange}
           themeMode={themeMode}

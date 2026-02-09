@@ -20,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
   ProviderAccountsSection,
+  type AccountOAuthSession,
   type ProviderAccountSummary,
 } from "@/components/provider-accounts-section";
 import {
@@ -280,6 +281,9 @@ interface SettingsPageProps {
     credentials: Record<string, unknown>
   ) => Promise<void>;
   onClearAccountCredentials: (providerId: string, accountId: string) => Promise<void>;
+  accountOAuthSessionById: Record<string, AccountOAuthSession | undefined>;
+  onStartAccountOAuth: (providerId: string, accountId: string) => Promise<void>;
+  onCancelAccountOAuth: (providerId: string, accountId: string) => Promise<void>;
   autoUpdateInterval: AutoUpdateIntervalMinutes;
   onAutoUpdateIntervalChange: (value: AutoUpdateIntervalMinutes) => void;
   themeMode: ThemeMode;
@@ -306,6 +310,9 @@ export function SettingsPage({
   onDeleteAccount,
   onSaveAccountCredentials,
   onClearAccountCredentials,
+  accountOAuthSessionById,
+  onStartAccountOAuth,
+  onCancelAccountOAuth,
   autoUpdateInterval,
   onAutoUpdateIntervalChange,
   themeMode,
@@ -476,6 +483,21 @@ export function SettingsPage({
           </div>
         </div>
       </section>
+      <ProviderAccountsSection
+        providers={providers}
+        accountsByProvider={accountsByProvider}
+        defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
+        loading={accountsLoading}
+        onReloadAccounts={onReloadAccounts}
+        onCreateAccount={onCreateAccount}
+        onUpdateAccountLabel={onUpdateAccountLabel}
+        onDeleteAccount={onDeleteAccount}
+        onSaveAccountCredentials={onSaveAccountCredentials}
+        onClearAccountCredentials={onClearAccountCredentials}
+        oauthSessionByAccount={accountOAuthSessionById}
+        onStartAccountOAuth={onStartAccountOAuth}
+        onCancelAccountOAuth={onCancelAccountOAuth}
+      />
       <section>
         <h3 className="text-lg font-semibold mb-0">Providers</h3>
         <p className="text-sm text-muted-foreground mb-2">
@@ -502,18 +524,6 @@ export function SettingsPage({
           </DndContext>
         </div>
       </section>
-      <ProviderAccountsSection
-        providers={providers}
-        accountsByProvider={accountsByProvider}
-        defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
-        loading={accountsLoading}
-        onReloadAccounts={onReloadAccounts}
-        onCreateAccount={onCreateAccount}
-        onUpdateAccountLabel={onUpdateAccountLabel}
-        onDeleteAccount={onDeleteAccount}
-        onSaveAccountCredentials={onSaveAccountCredentials}
-        onClearAccountCredentials={onClearAccountCredentials}
-      />
     </div>
   );
 }
