@@ -1,18 +1,27 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod account_store;
+#[cfg(target_os = "macos")]
+mod app_nap;
 mod error;
 mod models;
+mod panel;
+mod probe;
+mod provider_clients;
 mod providers;
 mod secrets;
+mod tray;
 mod utils;
+#[cfg(target_os = "macos")]
+mod webkit_config;
+
+use std::collections::HashSet;
 
 use account_store::AccountStore;
 use models::{AccountRecord, CreateAccountInput, UpdateAccountInput};
+use probe::{ProbeBatchCompleteEvent, ProbeBatchStarted, ProbeResultEvent, ProviderMeta};
 use providers::ProviderDescriptor;
-use serde_json::{json, Value};
 use tauri::{Emitter, Manager, State};
-use time::format_description::well_known::Rfc3339;
-use time::{Duration, OffsetDateTime};
+use tauri_plugin_log::{Target, TargetKind};
+use uuid::Uuid;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -20,145 +29,98 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn init_panel() -> Result<(), String> {
-    Ok(())
+fn init_panel(app_handle: tauri::AppHandle) -> Result<(), String> {
+    panel::init(&app_handle).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-fn hide_panel() -> Result<(), String> {
-    Ok(())
-}
-
-fn provider_brand(id: &str) -> (&'static str, &'static str, &'static str) {
-    match id {
-        "codex" => ("/vite.svg", "#0EA5E9", "Pro"),
-        "copilot" => ("/tauri.svg", "#8B5CF6", "Business"),
-        "claude" => ("/tauri.svg", "#D97706", "Max"),
-        "zai" => ("/vite.svg", "#14B8A6", "Standard"),
-        _ => ("/vite.svg", "#6B7280", "Standard"),
+fn hide_panel(app_handle: tauri::AppHandle) {
+    use tauri_nspanel::ManagerExt;
+    if let Ok(panel) = app_handle.get_webview_panel("main") {
+        panel.hide();
     }
 }
 
-fn build_mock_provider_output(provider: &ProviderDescriptor) -> Value {
-    let (icon_url, brand_color, plan) = provider_brand(provider.id);
-
-    let seed = provider
-        .id
-        .bytes()
-        .fold(0u32, |acc, byte| acc.wrapping_add(byte as u32));
-    let limit = 100.0f64;
-    let used = 20.0f64 + (seed % 70) as f64;
-    let request_count = 300 + ((seed * 13) % 1400);
-    let status_text = if used < 60.0 {
-        "Healthy"
-    } else if used < 85.0 {
-        "Watch"
-    } else {
-        "High"
-    };
-
-    let resets_at = (OffsetDateTime::now_utc() + Duration::days(7))
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| "2099-01-01T00:00:00Z".to_string());
-
-    json!({
-        "providerId": provider.id,
-        "displayName": provider.name,
-        "plan": plan,
-        "iconUrl": icon_url,
-        "lines": [
-            {
-                "type": "progress",
-                "label": "Weekly usage",
-                "used": used,
-                "limit": limit,
-                "format": { "kind": "percent" },
-                "resetsAt": resets_at,
-                "periodDurationMs": 604_800_000,
-                "color": brand_color
-            },
-            {
-                "type": "badge",
-                "label": "Status",
-                "text": status_text,
-                "color": brand_color,
-                "subtitle": "Mock provider data"
-            },
-            {
-                "type": "text",
-                "label": "Requests",
-                "value": request_count.to_string(),
-                "subtitle": "Current period"
-            }
-        ]
-    })
-}
-
 #[tauri::command]
-fn list_providers_meta() -> Vec<Value> {
-    providers::all_provider_descriptors()
-        .into_iter()
-        .map(|provider| {
-            let (icon_url, brand_color, _) = provider_brand(provider.id);
-            json!({
-                "id": provider.id,
-                "name": provider.name,
-                "iconUrl": icon_url,
-                "brandColor": brand_color,
-                "lines": [
-                    { "type": "progress", "label": "Weekly usage", "scope": "overview" },
-                    { "type": "badge", "label": "Status", "scope": "overview" },
-                    { "type": "text", "label": "Requests", "scope": "detail" }
-                ],
-                "primaryCandidates": ["Weekly usage"]
-            })
-        })
-        .collect()
+fn list_providers_meta() -> Vec<ProviderMeta> {
+    probe::all_provider_meta()
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn start_provider_probe_batch(
-    app: tauri::AppHandle,
-    batch_id: String,
+async fn start_provider_probe_batch(
+    app_handle: tauri::AppHandle,
+    store: State<'_, AccountStore>,
+    batch_id: Option<String>,
     provider_ids: Option<Vec<String>>,
-) -> Result<Value, String> {
-    let providers = providers::all_provider_descriptors();
-    let all_ids: Vec<String> = providers
-        .iter()
-        .map(|provider| provider.id.to_string())
-        .collect();
+) -> Result<ProbeBatchStarted, String> {
+    let batch_id = batch_id
+        .and_then(|id| {
+            let trimmed = id.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let known_ids = probe::all_provider_ids();
+    let known_set: HashSet<String> = known_ids.iter().cloned().collect();
 
     let selected_ids = if let Some(requested) = provider_ids {
+        let mut seen = HashSet::new();
         requested
             .into_iter()
-            .filter(|id| all_ids.iter().any(|known| known == id))
+            .map(|id| id.trim().to_ascii_lowercase())
+            .filter(|id| !id.is_empty() && known_set.contains(id) && seen.insert(id.clone()))
             .collect::<Vec<_>>()
     } else {
-        all_ids.clone()
+        known_ids.clone()
     };
 
-    for provider in providers
-        .iter()
-        .filter(|provider| selected_ids.iter().any(|id| id == provider.id))
-    {
-        let output = build_mock_provider_output(provider);
-        app.emit(
-            "probe:result",
-            json!({
-                "batchId": batch_id,
-                "output": output,
-            }),
-        )
-        .map_err(|err| err.to_string())?;
+    if selected_ids.is_empty() {
+        let _ = app_handle.emit(
+            "probe:batch-complete",
+            ProbeBatchCompleteEvent {
+                batch_id: batch_id.clone(),
+            },
+        );
+        return Ok(ProbeBatchStarted {
+            batch_id,
+            provider_ids: selected_ids,
+        });
     }
 
-    app.emit("probe:batch-complete", json!({ "batchId": batch_id }))
+    for provider_id in &selected_ids {
+        let output = match probe::probe_provider(&app_handle, store.inner(), provider_id).await {
+            Ok(output) => output,
+            Err(err) => probe::build_error_output(provider_id, err.to_string()),
+        };
+
+        app_handle
+            .emit(
+                "probe:result",
+                ProbeResultEvent {
+                    batch_id: batch_id.clone(),
+                    output,
+                },
+            )
+            .map_err(|err| err.to_string())?;
+    }
+
+    app_handle
+        .emit(
+            "probe:batch-complete",
+            ProbeBatchCompleteEvent {
+                batch_id: batch_id.clone(),
+            },
+        )
         .map_err(|err| err.to_string())?;
 
-    Ok(json!({
-        "batchId": batch_id,
-        "providerIds": selected_ids,
-    }))
+    Ok(ProbeBatchStarted {
+        batch_id,
+        provider_ids: selected_ids,
+    })
 }
 
 #[tauri::command]
@@ -247,22 +209,46 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_keyring::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_nspanel::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: None }),
+                ])
+                .max_file_size(10_000_000)
+                .level(log::LevelFilter::Info)
+                .level_for("hyper", log::LevelFilter::Warn)
+                .level_for("reqwest", log::LevelFilter::Warn)
+                .build(),
+        )
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            #[cfg(target_os = "macos")]
+            {
+                app_nap::disable_app_nap();
+                webkit_config::disable_webview_suspension(app.handle());
+            }
+
             let store = AccountStore::load(app.handle())
                 .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             app.manage(store);
+
+            tray::create(app.handle())?;
+
             Ok(())
-        })
-        .plugin(tauri_plugin_log::Builder::new().build())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        });
 
     if has_updater_config {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
 
     builder
-        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             init_panel,

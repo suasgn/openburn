@@ -225,6 +225,50 @@ impl AccountStore {
         Ok(removed)
     }
 
+    pub fn record_probe_success(&self, account_id: &str) -> Result<()> {
+        let account_id = account_id.trim();
+        if account_id.is_empty() {
+            return Err(BackendError::Validation(
+                "accountId is required".to_string(),
+            ));
+        }
+
+        let mut state = self.lock_state()?;
+        let account = state
+            .accounts
+            .iter_mut()
+            .find(|account| account.id == account_id)
+            .ok_or(BackendError::AccountNotFound)?;
+
+        let now = now_rfc3339();
+        account.last_fetch_at = Some(now.clone());
+        account.last_error = None;
+        account.updated_at = now;
+        self.save_locked(&state)?;
+        Ok(())
+    }
+
+    pub fn record_probe_error(&self, account_id: &str, message: &str) -> Result<()> {
+        let account_id = account_id.trim();
+        if account_id.is_empty() {
+            return Err(BackendError::Validation(
+                "accountId is required".to_string(),
+            ));
+        }
+
+        let mut state = self.lock_state()?;
+        let account = state
+            .accounts
+            .iter_mut()
+            .find(|account| account.id == account_id)
+            .ok_or(BackendError::AccountNotFound)?;
+
+        account.last_error = Some(message.to_string());
+        account.updated_at = now_rfc3339();
+        self.save_locked(&state)?;
+        Ok(())
+    }
+
     pub fn set_credentials_blob(
         &self,
         account_id: &str,

@@ -107,7 +107,7 @@ export function SideNav({ activeView, onViewChange, providers }: SideNavProps) {
       <div className="flex-1" />
 
       {/* Help */}
-      <NavButton
+      {/* <NavButton
         isActive={false}
         onClick={() => {
           openUrl("https://github.com/robinebers/openusage/issues").catch(console.error)
@@ -116,7 +116,7 @@ export function SideNav({ activeView, onViewChange, providers }: SideNavProps) {
         aria-label="Help"
       >
         <CircleHelp className="size-6" />
-      </NavButton>
+      </NavButton> */}
 
       {/* Settings */}
       <NavButton

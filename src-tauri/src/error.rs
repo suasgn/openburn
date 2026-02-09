@@ -14,6 +14,8 @@ pub enum BackendError {
     Keyring(String),
     #[error("crypto error: {0}")]
     Crypto(String),
+    #[error("provider error: {0}")]
+    Provider(String),
     #[error("validation error: {0}")]
     Validation(String),
     #[error("account not found")]

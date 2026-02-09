@@ -11,6 +11,18 @@ import { OverviewPage } from "@/pages/overview"
 import { ProviderDetailPage } from "@/pages/provider-detail"
 import { SettingsPage } from "@/pages/settings"
 import type { ProviderMeta, ProviderOutput } from "@/lib/provider-types"
+import {
+  clearAccountCredentials,
+  createAccount,
+  deleteAccount,
+  hasAccountCredentials,
+  listAccounts,
+  listProviders,
+  setAccountCredentials,
+  updateAccount,
+  type AccountRecord,
+  type ProviderDescriptor,
+} from "@/lib/accounts"
 import { track } from "@/lib/analytics"
 import { getTrayIconSizePx, renderTrayBarsIcon } from "@/lib/tray-bars-icon"
 import { getTrayPrimaryBars } from "@/lib/tray-primary-progress"
@@ -66,6 +78,10 @@ function App() {
   const [canScrollDown, setCanScrollDown] = useState(false);
   const [providerStates, setProviderStates] = useState<Record<string, ProviderState>>({})
   const [providersMeta, setProvidersMeta] = useState<ProviderMeta[]>([])
+  const [providerDescriptors, setProviderDescriptors] = useState<ProviderDescriptor[]>([])
+  const [accounts, setAccounts] = useState<AccountRecord[]>([])
+  const [accountCredentialsById, setAccountCredentialsById] = useState<Record<string, boolean>>({})
+  const [accountsLoading, setAccountsLoading] = useState(false)
   const [providerSettings, setProviderSettings] = useState<ProviderSettings | null>(null)
   const [autoUpdateInterval, setAutoUpdateInterval] = useState<AutoUpdateIntervalMinutes>(
     DEFAULT_AUTO_UPDATE_INTERVAL
@@ -88,6 +104,13 @@ function App() {
   const trayUpdateTimerRef = useRef<number | null>(null)
   const trayUpdatePendingRef = useRef(false)
   const [trayReady, setTrayReady] = useState(false)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   // Store state in refs so scheduleTrayIconUpdate can read current values without recreating the callback
   const providersMetaRef = useRef(providersMeta)
@@ -476,14 +499,157 @@ function App() {
     onBatchComplete: handleBatchComplete,
   })
 
+  const reloadAccounts = useCallback(async () => {
+    if (isMountedRef.current) {
+      setAccountsLoading(true)
+    }
+    try {
+      const nextAccounts = await listAccounts()
+      const credentialsEntries = await Promise.all(
+        nextAccounts.map(async (account) => {
+          try {
+            const hasCredentials = await hasAccountCredentials(account.id)
+            return [account.id, hasCredentials] as const
+          } catch {
+            return [account.id, false] as const
+          }
+        }),
+      )
+
+      if (!isMountedRef.current) return
+
+      setAccounts(nextAccounts)
+      setAccountCredentialsById(Object.fromEntries(credentialsEntries))
+    } finally {
+      if (isMountedRef.current) {
+        setAccountsLoading(false)
+      }
+    }
+  }, [])
+
+  const triggerProviderProbe = useCallback(
+    (providerId: string) => {
+      if (!providerSettings) return
+      if (providerSettings.disabled.includes(providerId)) return
+
+      setLoadingForProviders([providerId])
+      startBatch([providerId]).catch((error) => {
+        console.error("Failed to start probe for provider account change:", error)
+        setErrorForProviders([providerId], "Failed to start probe")
+      })
+    },
+    [providerSettings, setLoadingForProviders, setErrorForProviders, startBatch],
+  )
+
+  const defaultAuthStrategyByProvider = useMemo(() => {
+    return Object.fromEntries(
+      providerDescriptors.map((provider) => [provider.id, provider.defaultAuthStrategyId]),
+    )
+  }, [providerDescriptors])
+
+  const accountsByProvider = useMemo(() => {
+    return accounts.reduce<
+      Record<
+        string,
+        Array<{
+          id: string
+          providerId: string
+          authStrategyId?: string | null
+          label: string
+          hasCredentials: boolean
+          lastFetchAt?: string | null
+          lastError?: string | null
+        }>
+      >
+    >((result, account) => {
+      if (!result[account.providerId]) {
+        result[account.providerId] = []
+      }
+
+      result[account.providerId].push({
+        id: account.id,
+        providerId: account.providerId,
+        authStrategyId: account.authStrategyId,
+        label: account.label,
+        hasCredentials: Boolean(accountCredentialsById[account.id]),
+        lastFetchAt: account.lastFetchAt,
+        lastError: account.lastError,
+      })
+
+      return result
+    }, {})
+  }, [accounts, accountCredentialsById])
+
+  const handleCreateProviderAccount = useCallback(
+    async (providerId: string) => {
+      const descriptor = providerDescriptors.find((provider) => provider.id === providerId)
+      if (!descriptor) {
+        throw new Error(`Unknown provider: ${providerId}`)
+      }
+
+      await createAccount({
+        providerId,
+        authStrategyId: descriptor.defaultAuthStrategyId,
+        settings: {},
+      })
+
+      await reloadAccounts()
+    },
+    [providerDescriptors, reloadAccounts],
+  )
+
+  const handleUpdateProviderAccountLabel = useCallback(
+    async (providerId: string, accountId: string, label: string) => {
+      await updateAccount(accountId, { label })
+      await reloadAccounts()
+      triggerProviderProbe(providerId)
+    },
+    [reloadAccounts, triggerProviderProbe],
+  )
+
+  const handleDeleteProviderAccount = useCallback(
+    async (providerId: string, accountId: string) => {
+      await deleteAccount(accountId)
+      await reloadAccounts()
+      triggerProviderProbe(providerId)
+    },
+    [reloadAccounts, triggerProviderProbe],
+  )
+
+  const handleSaveProviderAccountCredentials = useCallback(
+    async (
+      providerId: string,
+      accountId: string,
+      credentials: Record<string, unknown>,
+    ) => {
+      await setAccountCredentials(accountId, credentials)
+      await reloadAccounts()
+      triggerProviderProbe(providerId)
+    },
+    [reloadAccounts, triggerProviderProbe],
+  )
+
+  const handleClearProviderAccountCredentials = useCallback(
+    async (providerId: string, accountId: string) => {
+      await clearAccountCredentials(accountId)
+      await reloadAccounts()
+      triggerProviderProbe(providerId)
+    },
+    [reloadAccounts, triggerProviderProbe],
+  )
+
   useEffect(() => {
     let isMounted = true
 
     const loadSettings = async () => {
       try {
-        const availableProviders = await invoke<ProviderMeta[]>("list_providers_meta")
+        const [availableProviders, descriptors] = await Promise.all([
+          invoke<ProviderMeta[]>("list_providers_meta"),
+          listProviders(),
+        ])
         if (!isMounted) return
         setProvidersMeta(availableProviders)
+        setProviderDescriptors(descriptors)
 
         const storedSettings = await loadProviderSettings()
         const normalized = normalizeProviderSettings(
@@ -551,6 +717,12 @@ function App() {
               setErrorForProviders(enabledIds, "Failed to start probe")
             }
           }
+
+          try {
+            await reloadAccounts()
+          } catch (error) {
+            console.error("Failed to load accounts:", error)
+          }
         }
 
         if (
@@ -571,7 +743,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [setLoadingForProviders, setErrorForProviders, startBatch])
+  }, [setLoadingForProviders, setErrorForProviders, startBatch, reloadAccounts])
 
   useEffect(() => {
     if (!providerSettings) {
@@ -825,8 +997,17 @@ function App() {
       return (
         <SettingsPage
           providers={settingsProviders}
+          accountsByProvider={accountsByProvider}
+          defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
+          accountsLoading={accountsLoading}
           onReorder={handleReorder}
           onToggle={handleToggle}
+          onReloadAccounts={reloadAccounts}
+          onCreateAccount={handleCreateProviderAccount}
+          onUpdateAccountLabel={handleUpdateProviderAccountLabel}
+          onDeleteAccount={handleDeleteProviderAccount}
+          onSaveAccountCredentials={handleSaveProviderAccountCredentials}
+          onClearAccountCredentials={handleClearProviderAccountCredentials}
           autoUpdateInterval={autoUpdateInterval}
           onAutoUpdateIntervalChange={handleAutoUpdateIntervalChange}
           themeMode={themeMode}

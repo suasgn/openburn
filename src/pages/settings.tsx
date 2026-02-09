@@ -19,6 +19,10 @@ import { GripVertical } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
+  ProviderAccountsSection,
+  type ProviderAccountSummary,
+} from "@/components/provider-accounts-section";
+import {
   AUTO_UPDATE_OPTIONS,
   DISPLAY_MODE_OPTIONS,
   TRAY_ICON_STYLE_OPTIONS,
@@ -257,8 +261,25 @@ function SortableProviderItem({
 
 interface SettingsPageProps {
   providers: ProviderConfig[];
+  accountsByProvider: Record<string, ProviderAccountSummary[]>;
+  defaultAuthStrategyByProvider: Record<string, string>;
+  accountsLoading: boolean;
   onReorder: (orderedIds: string[]) => void;
   onToggle: (id: string) => void;
+  onReloadAccounts: () => Promise<void>;
+  onCreateAccount: (providerId: string) => Promise<void>;
+  onUpdateAccountLabel: (
+    providerId: string,
+    accountId: string,
+    label: string
+  ) => Promise<void>;
+  onDeleteAccount: (providerId: string, accountId: string) => Promise<void>;
+  onSaveAccountCredentials: (
+    providerId: string,
+    accountId: string,
+    credentials: Record<string, unknown>
+  ) => Promise<void>;
+  onClearAccountCredentials: (providerId: string, accountId: string) => Promise<void>;
   autoUpdateInterval: AutoUpdateIntervalMinutes;
   onAutoUpdateIntervalChange: (value: AutoUpdateIntervalMinutes) => void;
   themeMode: ThemeMode;
@@ -274,8 +295,17 @@ interface SettingsPageProps {
 
 export function SettingsPage({
   providers,
+  accountsByProvider,
+  defaultAuthStrategyByProvider,
+  accountsLoading,
   onReorder,
   onToggle,
+  onReloadAccounts,
+  onCreateAccount,
+  onUpdateAccountLabel,
+  onDeleteAccount,
+  onSaveAccountCredentials,
+  onClearAccountCredentials,
   autoUpdateInterval,
   onAutoUpdateIntervalChange,
   themeMode,
@@ -472,6 +502,18 @@ export function SettingsPage({
           </DndContext>
         </div>
       </section>
+      <ProviderAccountsSection
+        providers={providers}
+        accountsByProvider={accountsByProvider}
+        defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
+        loading={accountsLoading}
+        onReloadAccounts={onReloadAccounts}
+        onCreateAccount={onCreateAccount}
+        onUpdateAccountLabel={onUpdateAccountLabel}
+        onDeleteAccount={onDeleteAccount}
+        onSaveAccountCredentials={onSaveAccountCredentials}
+        onClearAccountCredentials={onClearAccountCredentials}
+      />
     </div>
   );
 }
