@@ -1,4 +1,4 @@
-use super::descriptor::ProviderDescriptor;
+use super::descriptor::{AuthStrategyDescriptor, ProviderDescriptor};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderContract {
@@ -15,6 +15,14 @@ impl ProviderContract {
             id: self.id,
             name: self.name,
             default_auth_strategy_id: self.default_auth_strategy_id,
+            auth_strategies: self
+                .auth_strategies
+                .iter()
+                .map(|strategy| AuthStrategyDescriptor {
+                    id: strategy.id,
+                    label: strategy.label,
+                })
+                .collect(),
         }
     }
 

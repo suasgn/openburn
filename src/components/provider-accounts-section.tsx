@@ -16,10 +16,9 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { AlertCircle, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -28,6 +27,11 @@ type ProviderConfig = {
   id: string
   name: string
   enabled: boolean
+}
+
+export type ProviderAuthStrategyOption = {
+  id: string
+  label: string
 }
 
 export type ProviderAccountSummary = {
@@ -50,7 +54,7 @@ export type AccountOAuthSession = {
   message?: string
 }
 
-type NoticeState =
+type ToastState =
   | { kind: "success"; text: string }
   | { kind: "error"; text: string }
   | null
@@ -58,12 +62,12 @@ type NoticeState =
 interface ProviderAccountsSectionProps {
   providers: ProviderConfig[]
   accountsByProvider: AccountsByProvider
-  defaultAuthStrategyByProvider: Record<string, string>
+  providerAuthStrategiesByProvider: Record<string, ProviderAuthStrategyOption[]>
   loading: boolean
   onReorderAccounts: (providerId: string, orderedAccountIds: string[]) => void
   onReloadAccounts: () => Promise<void>
   onToggleProvider: (providerId: string) => void
-  onCreateAccount: (providerId: string) => Promise<void>
+  onCreateAccount: (providerId: string, authStrategyId: string) => Promise<void>
   onUpdateAccountLabel: (
     providerId: string,
     accountId: string,
@@ -240,7 +244,7 @@ function SortableAccountCard({
 export function ProviderAccountsSection({
   providers,
   accountsByProvider,
-  defaultAuthStrategyByProvider,
+  providerAuthStrategiesByProvider,
   loading,
   onReorderAccounts,
   onReloadAccounts,
@@ -254,8 +258,9 @@ export function ProviderAccountsSection({
   onStartAccountOAuth,
   onCancelAccountOAuth,
 }: ProviderAccountsSectionProps) {
-  const [notice, setNotice] = useState<NoticeState>(null)
+  const [toast, setToast] = useState<ToastState>(null)
   const [activeAction, setActiveAction] = useState<string | null>(null)
+  const [createPickerProviderId, setCreatePickerProviderId] = useState<string | null>(null)
   const [labelDraftByAccount, setLabelDraftByAccount] = useState<Record<string, string>>({})
   const [credentialsDraftByAccount, setCredentialsDraftByAccount] = useState<
     Record<string, string>
@@ -267,6 +272,7 @@ export function ProviderAccountsSection({
     {},
   )
   const labelSaveTimerByAccountRef = useRef<Record<string, number>>({})
+  const toastTimerRef = useRef<number | null>(null)
 
   const accountReorderSensors = useSensors(
     useSensor(PointerSensor, {
@@ -282,6 +288,9 @@ export function ProviderAccountsSection({
       for (const timerId of Object.values(labelSaveTimerByAccountRef.current)) {
         window.clearTimeout(timerId)
       }
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current)
+      }
     }
   }, [])
 
@@ -294,16 +303,23 @@ export function ProviderAccountsSection({
     [accountsByProvider, providers],
   )
 
+  const showToast = (kind: "success" | "error", text: string) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current)
+    }
+    setToast({ kind, text })
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null)
+      toastTimerRef.current = null
+    }, 3200)
+  }
+
   const runAction = async (actionId: string, task: () => Promise<void>) => {
     setActiveAction(actionId)
-    setNotice(null)
     try {
       await task()
     } catch (error) {
-      setNotice({
-        kind: "error",
-        text: error instanceof Error ? error.message : String(error),
-      })
+      showToast("error", error instanceof Error ? error.message : String(error))
     } finally {
       setActiveAction(null)
     }
@@ -346,31 +362,18 @@ export function ProviderAccountsSection({
         </Button>
       </div>
 
-      {notice && (
-        <Alert
-          variant={notice.kind === "error" ? "destructive" : "default"}
-          className="mb-2 flex items-center gap-2 [&>svg]:static [&>svg]:translate-y-0 [&>svg~*]:pl-0 [&>svg+div]:translate-y-0"
-        >
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{notice.text}</AlertDescription>
-        </Alert>
-      )}
-
       <div className="space-y-2">
         {providersWithAccounts.map(({ provider, accounts }) => {
-          const defaultStrategy =
-            defaultAuthStrategyByProvider[provider.id] || "(unknown)"
           const createActionId = `create:${provider.id}`
           const orderedAccountIds = accounts.map((account) => account.id)
+          const availableAuthStrategies = providerAuthStrategiesByProvider[provider.id] ?? []
+          const createPickerOpen = createPickerProviderId === provider.id
 
           return (
             <div key={provider.id} className="rounded-lg border bg-muted/50 p-2 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-medium leading-none">{provider.name}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Default auth: {authLabel(defaultStrategy)}
-                  </p>
                 </div>
                 <div className="flex items-center gap-1">
                   <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground select-none pr-1">
@@ -386,21 +389,61 @@ export function ProviderAccountsSection({
                     type="button"
                     size="xs"
                     disabled={loading || activeAction !== null}
-                    onClick={() =>
-                      runAction(createActionId, async () => {
-                        await onCreateAccount(provider.id)
-                        setNotice({
-                          kind: "success",
-                          text: `${provider.name} account created`,
-                        })
-                      })
-                    }
+                    onClick={() => {
+                      setCreatePickerProviderId((previous) =>
+                        previous === provider.id ? null : provider.id,
+                      )
+                    }}
                   >
                     <Plus className="size-3" />
                     Add
                   </Button>
                 </div>
               </div>
+
+              {createPickerOpen && (
+                <div className="rounded-md border border-dashed bg-background/70 p-2 space-y-2">
+                  <p className="text-xs text-muted-foreground">Choose auth for the new account.</p>
+                  {availableAuthStrategies.length === 0 ? (
+                    <p className="text-xs text-destructive">No auth strategies are available.</p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {availableAuthStrategies.map((strategy) => (
+                        <Button
+                          key={strategy.id}
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          disabled={loading || activeAction !== null}
+                          onClick={() =>
+                            runAction(`${createActionId}:${strategy.id}`, async () => {
+                              await onCreateAccount(provider.id, strategy.id)
+                              setCreatePickerProviderId(null)
+                              showToast(
+                                "success",
+                                `${provider.name} account created with ${strategy.label}`,
+                              )
+                            })
+                          }
+                        >
+                          {strategy.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      disabled={loading || activeAction !== null}
+                      onClick={() => setCreatePickerProviderId(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {accounts.length === 0 ? (
                 <p className="text-xs text-muted-foreground px-1 py-1">
@@ -497,10 +540,7 @@ export function ProviderAccountsSection({
                               onClick={() =>
                                 runAction(deleteActionId, async () => {
                                   await onDeleteAccount(provider.id, account.id)
-                                  setNotice({
-                                    kind: "success",
-                                    text: `${provider.name} account removed`,
-                                  })
+                                  showToast("success", `${provider.name} account removed`)
                                 })
                               }
                             >
@@ -533,10 +573,10 @@ export function ProviderAccountsSection({
                               labelSaveTimerByAccountRef.current[account.id] = window.setTimeout(() => {
                                 delete labelSaveTimerByAccountRef.current[account.id]
                                 void onUpdateAccountLabel(provider.id, account.id, trimmed).catch((error) => {
-                                  setNotice({
-                                    kind: "error",
-                                    text: error instanceof Error ? error.message : String(error),
-                                  })
+                                  showToast(
+                                    "error",
+                                    error instanceof Error ? error.message : String(error),
+                                  )
                                 })
                               }, 450)
                             }}
@@ -636,12 +676,12 @@ export function ProviderAccountsSection({
                                 onClick={() =>
                                   runAction(startOauthActionId, async () => {
                                     await onStartAccountOAuth(provider.id, account.id)
-                                    setNotice({
-                                      kind: "success",
-                                      text: oauthError
+                                    showToast(
+                                      "success",
+                                      oauthError
                                         ? `${provider.name} OAuth restarted`
                                         : `${provider.name} OAuth started`,
-                                    })
+                                    )
                                   })
                                 }
                               >
@@ -656,10 +696,7 @@ export function ProviderAccountsSection({
                                   onClick={() =>
                                     runAction(cancelOauthActionId, async () => {
                                       await onCancelAccountOAuth(provider.id, account.id)
-                                      setNotice({
-                                        kind: "success",
-                                        text: `${provider.name} OAuth cancelled`,
-                                      })
+                                      showToast("success", `${provider.name} OAuth cancelled`)
                                     })
                                   }
                                 >
@@ -692,10 +729,7 @@ export function ProviderAccountsSection({
                                     ...previous,
                                     [account.id]: "",
                                   }))
-                                  setNotice({
-                                    kind: "success",
-                                    text: `${provider.name} credentials saved`,
-                                  })
+                                  showToast("success", `${provider.name} credentials saved`)
                                 })
                               }
                             >
@@ -724,10 +758,7 @@ export function ProviderAccountsSection({
                                     ...previous,
                                     [account.id]: "",
                                   }))
-                                  setNotice({
-                                    kind: "success",
-                                    text: `${provider.name} credentials saved`,
-                                  })
+                                  showToast("success", `${provider.name} credentials saved`)
                                 })
                               }
                             >
@@ -743,10 +774,7 @@ export function ProviderAccountsSection({
                               onClick={() =>
                                 runAction(clearCredentialsActionId, async () => {
                                   await onClearAccountCredentials(provider.id, account.id)
-                                  setNotice({
-                                    kind: "success",
-                                    text: `${provider.name} credentials cleared`,
-                                  })
+                                  showToast("success", `${provider.name} credentials cleared`)
                                 })
                               }
                             >
@@ -781,10 +809,7 @@ export function ProviderAccountsSection({
                                       throw new Error("Clipboard is unavailable")
                                     }
                                     await navigator.clipboard.writeText(oauthSession.url)
-                                    setNotice({
-                                      kind: "success",
-                                      text: "OAuth URL copied",
-                                    })
+                                    showToast("success", "OAuth URL copied")
                                   })
                                 }
                               >
@@ -811,6 +836,28 @@ export function ProviderAccountsSection({
           )
         })}
       </div>
+
+      {toast && (
+        <div className="pointer-events-none fixed right-8 bottom-14 z-50 flex justify-end">
+          <div
+            role={toast.kind === "error" ? "alert" : "status"}
+            aria-live="polite"
+            className={cn(
+              "pointer-events-auto flex max-w-[20rem] items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-xl backdrop-blur-sm",
+              toast.kind === "error"
+                ? "border-rose-300/70 bg-rose-600/95 text-white"
+                : "border-emerald-300/70 bg-emerald-600/95 text-white",
+            )}
+          >
+            {toast.kind === "error" ? (
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            ) : (
+              <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+            )}
+            <p className="leading-5">{toast.text}</p>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

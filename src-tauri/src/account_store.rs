@@ -79,7 +79,11 @@ impl AccountStore {
     pub fn list_accounts(&self) -> Result<Vec<AccountRecord>> {
         let state = self.lock_state()?;
         let mut accounts = state.accounts.clone();
-        accounts.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        accounts.sort_by(|a, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(accounts)
     }
 

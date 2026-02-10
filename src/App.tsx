@@ -32,6 +32,7 @@ import {
   updateAccount,
   type OAuthStartResponse,
   type AccountRecord,
+  type ProviderAuthStrategy,
   type ProviderDescriptor,
 } from "@/lib/accounts"
 import { track } from "@/lib/analytics"
@@ -563,10 +564,12 @@ function App() {
     [providerSettings, setLoadingForProviders, setErrorForProviders, startBatch],
   )
 
-  const defaultAuthStrategyByProvider = useMemo(() => {
-    return Object.fromEntries(
-      providerDescriptors.map((provider) => [provider.id, provider.defaultAuthStrategyId]),
-    )
+  const providerAuthStrategiesByProvider = useMemo(() => {
+    const byProvider: Record<string, ProviderAuthStrategy[]> = {}
+    for (const provider of providerDescriptors) {
+      byProvider[provider.id] = provider.authStrategies
+    }
+    return byProvider
   }, [providerDescriptors])
 
   const accountsByProvider = useMemo(() => {
@@ -659,15 +662,22 @@ function App() {
   )
 
   const handleCreateProviderAccount = useCallback(
-    async (providerId: string) => {
+    async (providerId: string, authStrategyId: string) => {
       const descriptor = providerDescriptors.find((provider) => provider.id === providerId)
       if (!descriptor) {
         throw new Error(`Unknown provider: ${providerId}`)
       }
 
+      const strategySupported = descriptor.authStrategies.some(
+        (strategy) => strategy.id === authStrategyId,
+      )
+      if (!strategySupported) {
+        throw new Error(`Unsupported auth strategy for provider ${providerId}: ${authStrategyId}`)
+      }
+
       await createAccount({
         providerId,
-        authStrategyId: descriptor.defaultAuthStrategyId,
+        authStrategyId,
         settings: {},
       })
 
@@ -1247,7 +1257,7 @@ function App() {
         <SettingsPage
           providers={settingsProviders}
           accountsByProvider={accountsByProvider}
-          defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
+          providerAuthStrategiesByProvider={providerAuthStrategiesByProvider}
           accountsLoading={accountsLoading}
           onReorderAccounts={handleReorderProviderAccounts}
           onToggleProvider={handleToggle}

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import {
   ProviderAccountsSection,
   type AccountOAuthSession,
+  type ProviderAuthStrategyOption,
   type ProviderAccountSummary,
 } from "@/components/provider-accounts-section";
 import {
@@ -187,12 +188,12 @@ function TrayIconStylePreview({
 interface SettingsPageProps {
   providers: ProviderConfig[];
   accountsByProvider: Record<string, ProviderAccountSummary[]>;
-  defaultAuthStrategyByProvider: Record<string, string>;
+  providerAuthStrategiesByProvider: Record<string, ProviderAuthStrategyOption[]>;
   accountsLoading: boolean;
   onReorderAccounts: (providerId: string, orderedAccountIds: string[]) => void;
   onToggleProvider: (id: string) => void;
   onReloadAccounts: () => Promise<void>;
-  onCreateAccount: (providerId: string) => Promise<void>;
+  onCreateAccount: (providerId: string, authStrategyId: string) => Promise<void>;
   onUpdateAccountLabel: (
     providerId: string,
     accountId: string,
@@ -223,7 +224,7 @@ interface SettingsPageProps {
 export function SettingsPage({
   providers,
   accountsByProvider,
-  defaultAuthStrategyByProvider,
+  providerAuthStrategiesByProvider,
   accountsLoading,
   onReorderAccounts,
   onToggleProvider,
@@ -389,7 +390,7 @@ export function SettingsPage({
       <ProviderAccountsSection
         providers={providers}
         accountsByProvider={accountsByProvider}
-        defaultAuthStrategyByProvider={defaultAuthStrategyByProvider}
+        providerAuthStrategiesByProvider={providerAuthStrategiesByProvider}
         loading={accountsLoading}
         onReorderAccounts={onReorderAccounts}
         onReloadAccounts={onReloadAccounts}

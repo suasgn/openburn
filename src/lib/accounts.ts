@@ -1,9 +1,15 @@
 import { invoke } from "@tauri-apps/api/core"
 
+export type ProviderAuthStrategy = {
+  id: string
+  label: string
+}
+
 export type ProviderDescriptor = {
   id: string
   name: string
   defaultAuthStrategyId: string
+  authStrategies: ProviderAuthStrategy[]
 }
 
 export type AccountRecord = {
