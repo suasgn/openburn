@@ -1,34 +1,22 @@
 import { useEffect } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { ArrowUpRight, Bug } from "lucide-react";
+import appIconBundle from "@/assets/app-icon-bundle.svg";
+import { Button } from "@/components/ui/button";
 
 interface AboutDialogProps {
   version: string;
   onClose: () => void;
 }
 
-function ExternalLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
-  const handleClick = () => {
-    openUrl(href).catch(console.error);
+export function AboutDialog({ version, onClose }: AboutDialogProps) {
+  const repoUrl = "https://github.com/suasgn/openburn";
+  const issueUrl = "https://github.com/suasgn/openburn/issues/new/choose";
+
+  const openExternal = (url: string) => {
+    openUrl(url).catch(console.error);
   };
 
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-    >
-      {children}
-    </button>
-  );
-}
-
-export function AboutDialog({ version, onClose }: AboutDialogProps) {
   // Close on ESC key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -64,32 +52,49 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
       className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm rounded-xl"
       onClick={handleBackdropClick}
     >
-      <div className="bg-card rounded-lg border shadow-xl p-6 max-w-xs w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-200">
-        <img
-          src="/icon.png"
-          alt="OpenBurn"
-          className="w-16 h-16 mx-auto mb-3 rounded-xl"
-        />
+      <div className="bg-card rounded-lg border shadow-xl p-6 max-w-sm w-full mx-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex flex-col items-center text-center">
+          <img
+            src={appIconBundle}
+            alt="OpenBurn"
+            className="w-16 h-16 rounded-xl mb-3"
+          />
 
-        <h2 className="text-xl font-semibold mb-1">OpenBurn</h2>
-
-        <span className="inline-block text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full mb-4">
-          v{version}
-        </span>
-
-        <div className="text-sm text-muted-foreground space-y-1">
-          <p>
-            Built by{" "}
-            <ExternalLink href="https://itsbyrob.in/x">Robin Ebers</ExternalLink>
+          <h2 className="text-xl font-semibold leading-none">OpenBurn</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Know your AI spend before it surprises you.
           </p>
-          <p>
-            Open source on{" "}
-            <ExternalLink href="https://github.com/robinebers/openusage">
-              GitHub
-            </ExternalLink>
-          </p>
-          <p className="text-xs pt-1">Contributions welcome</p>
+
+          <div className="mt-3 flex items-center gap-1.5">
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              v{version}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+              stable
+            </span>
+          </div>
         </div>
+
+        <div className="mt-4 grid gap-2">
+          <Button type="button" size="sm" className="w-full" onClick={() => openExternal(repoUrl)}>
+            View on GitHub
+            <ArrowUpRight className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => openExternal(issueUrl)}
+          >
+            Report an issue
+            <Bug className="size-3.5" />
+          </Button>
+        </div>
+
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          MIT License - Contributions welcome
+        </p>
       </div>
     </div>
   );

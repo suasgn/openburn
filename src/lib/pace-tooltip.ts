@@ -20,6 +20,20 @@ export function formatCompactDuration(deltaMs: number): string | null {
   return "<1m"
 }
 
+function formatProjectedPercent(value: number, displayMode: DisplayMode): string {
+  if (!Number.isFinite(value)) return "0"
+  const clamped = Math.max(0, Math.min(100, value))
+  if (clamped === 0 || clamped === 100) {
+    return `${clamped}`
+  }
+
+  const adjusted = displayMode === "left"
+    ? Math.floor(clamped * 10) / 10
+    : Math.ceil(clamped * 10) / 10
+  const bounded = Math.max(0.1, Math.min(99.9, adjusted))
+  return Number.isInteger(bounded) ? `${bounded}` : bounded.toFixed(1)
+}
+
 export function buildPaceDetailText({
   paceResult,
   used,
@@ -54,8 +68,8 @@ export function buildPaceDetailText({
   }
 
   // Show projected % at reset (clamped to 100%)
-  const projectedPercent = Math.min(100, Math.round((paceResult.projectedUsage / limit) * 100))
+  const projectedPercent = Math.min(100, Math.max(0, (paceResult.projectedUsage / limit) * 100))
   const shownPercent = displayMode === "left" ? 100 - projectedPercent : projectedPercent
   const suffix = displayMode === "left" ? "left at reset" : "used at reset"
-  return `${shownPercent}% ${suffix}`
+  return `${formatProjectedPercent(shownPercent, displayMode)}% ${suffix}`
 }

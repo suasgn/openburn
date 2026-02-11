@@ -71,6 +71,14 @@ import {
   type TrayIconStyle,
   type ThemeMode,
 } from "@/lib/settings"
+import {
+  buildProviderOutputsFromSnapshots,
+  extractAccountSnapshotsFromProviderOutput,
+  loadAccountSnapshots,
+  pruneSnapshotsForAccounts,
+  saveAccountSnapshots,
+  type AccountSnapshotsById,
+} from "@/lib/snapshots"
 
 const PANEL_WIDTH = 400;
 const MAX_HEIGHT_FALLBACK_PX = 600;
@@ -133,6 +141,8 @@ function App() {
   const trayUpdatePendingRef = useRef(false)
   const [trayReady, setTrayReady] = useState(false)
   const isMountedRef = useRef(true)
+  const accountsRef = useRef<AccountRecord[]>([])
+  const accountSnapshotsRef = useRef<AccountSnapshotsById>({})
 
   useEffect(() => {
     isMountedRef.current = true
@@ -140,6 +150,10 @@ function App() {
       isMountedRef.current = false
     }
   }, [])
+
+  useEffect(() => {
+    accountsRef.current = accounts
+  }, [accounts])
 
   // Store state in refs so scheduleTrayIconUpdate can read current values without recreating the callback
   const providersMetaRef = useRef(providersMeta)
@@ -463,7 +477,12 @@ function App() {
       const next = { ...prev }
       for (const id of ids) {
         const existing = prev[id]
-        next[id] = { data: null, loading: true, error: null, lastManualRefreshAt: existing?.lastManualRefreshAt ?? null }
+        next[id] = {
+          data: existing?.data ?? null,
+          loading: true,
+          error: null,
+          lastManualRefreshAt: existing?.lastManualRefreshAt ?? null,
+        }
       }
       return next
     })
@@ -474,7 +493,12 @@ function App() {
       const next = { ...prev }
       for (const id of ids) {
         const existing = prev[id]
-        next[id] = { data: null, loading: false, error, lastManualRefreshAt: existing?.lastManualRefreshAt ?? null }
+        next[id] = {
+          data: existing?.data ?? null,
+          loading: false,
+          error,
+          lastManualRefreshAt: existing?.lastManualRefreshAt ?? null,
+        }
       }
       return next
     })
@@ -496,10 +520,28 @@ function App() {
       if (isManual) {
         manualRefreshIdsRef.current.delete(output.providerId)
       }
+
+      if (!errorMessage) {
+        const snapshots = extractAccountSnapshotsFromProviderOutput({
+          output,
+          accounts: accountsRef.current,
+        })
+        if (Object.keys(snapshots).length > 0) {
+          const nextSnapshots: AccountSnapshotsById = {
+            ...accountSnapshotsRef.current,
+            ...snapshots,
+          }
+          accountSnapshotsRef.current = nextSnapshots
+          void saveAccountSnapshots(nextSnapshots).catch((error) => {
+            console.error("Failed to save snapshots:", error)
+          })
+        }
+      }
+
       setProviderStates((prev) => ({
         ...prev,
         [output.providerId]: {
-          data: errorMessage ? null : output,
+          data: errorMessage ? (prev[output.providerId]?.data ?? null) : output,
           loading: false,
           error: errorMessage,
           // Only set cooldown timestamp for successful manual refreshes
@@ -522,7 +564,7 @@ function App() {
     onBatchComplete: handleBatchComplete,
   })
 
-  const reloadAccounts = useCallback(async () => {
+  const reloadAccounts = useCallback(async (): Promise<AccountRecord[]> => {
     if (isMountedRef.current) {
       setAccountsLoading(true)
     }
@@ -539,10 +581,24 @@ function App() {
         }),
       )
 
-      if (!isMountedRef.current) return
+      const { snapshots: prunedSnapshots, pruned } = pruneSnapshotsForAccounts(
+        accountSnapshotsRef.current,
+        nextAccounts,
+      )
+      if (pruned) {
+        accountSnapshotsRef.current = prunedSnapshots
+        void saveAccountSnapshots(prunedSnapshots).catch((error) => {
+          console.error("Failed to prune snapshots:", error)
+        })
+      }
+
+      if (!isMountedRef.current) {
+        return nextAccounts
+      }
 
       setAccounts(nextAccounts)
       setAccountCredentialsById(Object.fromEntries(credentialsEntries))
+      return nextAccounts
     } finally {
       if (isMountedRef.current) {
         setAccountsLoading(false)
@@ -920,6 +976,8 @@ function App() {
           ? true
           : storedTrayShowPercentage
 
+        let loadedAccounts: AccountRecord[] = []
+
         if (isMounted) {
           setProviderSettings(normalized)
           setAutoUpdateInterval(storedInterval)
@@ -930,9 +988,47 @@ function App() {
           setAccountOrderByProvider(storedAccountOrderByProvider)
 
           try {
-            await reloadAccounts()
+            loadedAccounts = await reloadAccounts()
           } catch (error) {
             console.error("Failed to load accounts:", error)
+          }
+
+          try {
+            const loadedSnapshots = await loadAccountSnapshots()
+            const { snapshots: prunedSnapshots, pruned } = pruneSnapshotsForAccounts(
+              loadedSnapshots,
+              loadedAccounts,
+            )
+
+            accountSnapshotsRef.current = prunedSnapshots
+
+            if (pruned) {
+              void saveAccountSnapshots(prunedSnapshots).catch((error) => {
+                console.error("Failed to prune snapshots:", error)
+              })
+            }
+
+            const cachedOutputs = buildProviderOutputsFromSnapshots({
+              providersMeta: availableProviders,
+              accounts: loadedAccounts,
+              snapshotsByAccountId: prunedSnapshots,
+            })
+
+            setProviderStates((prev) => {
+              const next = { ...prev }
+              for (const [providerId, output] of Object.entries(cachedOutputs)) {
+                const existing = prev[providerId]
+                next[providerId] = {
+                  data: output,
+                  loading: false,
+                  error: null,
+                  lastManualRefreshAt: existing?.lastManualRefreshAt ?? null,
+                }
+              }
+              return next
+            })
+          } catch (error) {
+            console.error("Failed to load cached snapshots:", error)
           }
 
           const enabledIds = getEnabledProviderIds(normalized)
@@ -1261,7 +1357,9 @@ function App() {
           accountsLoading={accountsLoading}
           onReorderAccounts={handleReorderProviderAccounts}
           onToggleProvider={handleToggle}
-          onReloadAccounts={reloadAccounts}
+          onReloadAccounts={async () => {
+            await reloadAccounts()
+          }}
           onCreateAccount={handleCreateProviderAccount}
           onUpdateAccountLabel={handleUpdateProviderAccountLabel}
           onDeleteAccount={handleDeleteProviderAccount}

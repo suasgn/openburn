@@ -44,6 +44,21 @@ function formatCount(value: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(value)
 }
 
+function formatPercentValue(value: number, displayMode: DisplayMode): string {
+  if (!Number.isFinite(value)) return "0"
+  const clamped = Math.max(0, Math.min(100, value))
+  if (clamped === 0 || clamped === 100) {
+    return `${clamped}`
+  }
+
+  const adjusted = displayMode === "left"
+    ? Math.floor(clamped * 10) / 10
+    : Math.ceil(clamped * 10) / 10
+
+  const bounded = Math.max(0.1, Math.min(99.9, adjusted))
+  return Number.isInteger(bounded) ? `${bounded}` : bounded.toFixed(1)
+}
+
 function formatResetIn(nowMs: number, resetsAtIso: string): string | null {
   const resetsAtMs = Date.parse(resetsAtIso)
   if (!Number.isFinite(resetsAtMs)) return null
@@ -171,6 +186,8 @@ export function ProviderCard({
   const filteredLines = scopeFilter === "all"
     ? lines
     : lines.filter((line) => line.type !== "progress" || overviewLabels.has(getBaseMetricLabel(line.label)))
+  const hasVisibleData = filteredLines.length > 0
+  const showSkeleton = loading && !error && !hasVisibleData
 
   const groupedLines = useMemo(() => {
     const ungrouped: MetricLine[] = []
@@ -276,11 +293,11 @@ export function ProviderCard({
         </div>
         {error && <ProviderError message={error} />}
 
-        {loading && !error && (
+        {showSkeleton && (
           <SkeletonLines lines={filteredSkeletonLines} />
         )}
 
-        {!loading && !error && (
+        {!showSkeleton && !error && (
           <div className="space-y-4">
             {groupedLines.ungrouped.map((line, index) => (
               <MetricLineRenderer
@@ -402,7 +419,7 @@ function MetricLineRenderer({
 
     const primaryText =
       line.format.kind === "percent"
-        ? `${Math.round(shownAmount)}%${leftSuffix}`
+        ? `${formatPercentValue(shownAmount, displayMode)}%${leftSuffix}`
         : line.format.kind === "dollars"
           ? `$${formatNumber(shownAmount)}${leftSuffix}`
           : `${formatCount(shownAmount)} ${line.format.suffix}${leftSuffix}`

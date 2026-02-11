@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AboutDialog } from "@/components/about-dialog";
@@ -81,6 +81,8 @@ export function PanelFooter({
   onShowAbout,
   onCloseAbout,
 }: PanelFooterProps) {
+  const [refreshRevealArmed, setRefreshRevealArmed] = useState(false);
+
   const now = useNowTicker({
     enabled: Boolean(autoUpdateNextAt),
     resetKey: autoUpdateNextAt,
@@ -99,18 +101,26 @@ export function PanelFooter({
 
   return (
     <>
-      <div className="group/footer flex justify-between items-center h-8 pt-1.5 border-t">
+      <div className="flex justify-between items-center h-8 pt-1.5 border-t">
         <VersionDisplay
           version={version}
           updateStatus={updateStatus}
           onUpdateInstall={onUpdateInstall}
           onVersionClick={onShowAbout}
         />
-        <div className="relative flex items-center justify-end min-w-[140px]">
+        <div
+          className="relative flex items-center justify-end min-w-[140px]"
+          onMouseLeave={() => setRefreshRevealArmed(false)}
+        >
           <span
+            onMouseEnter={() => {
+              if (onManualRefreshAll) {
+                setRefreshRevealArmed(true);
+              }
+            }}
             className={cn(
               "text-xs text-muted-foreground tabular-nums transition-opacity",
-              onManualRefreshAll && "group-hover/footer:opacity-0"
+              onManualRefreshAll && refreshRevealArmed && "opacity-0"
             )}
           >
             {countdownLabel}
@@ -120,7 +130,10 @@ export function PanelFooter({
               type="button"
               variant="ghost"
               size="xs"
-              className="absolute right-0 h-6 opacity-0 pointer-events-none transition-opacity group-hover/footer:opacity-100 group-hover/footer:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto"
+              className={cn(
+                "absolute right-0 h-6 opacity-0 pointer-events-none transition-opacity",
+                refreshRevealArmed && "opacity-100 pointer-events-auto"
+              )}
               onClick={onManualRefreshAll}
             >
               <RefreshCw className="size-3" />
