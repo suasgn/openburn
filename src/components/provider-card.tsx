@@ -117,6 +117,10 @@ function removeAccountPrefix(line: MetricLine): {
   }
 }
 
+function isErrorBadge(line: MetricLine): line is Extract<MetricLine, { type: "badge" }> {
+  return line.type === "badge" && line.label === "Error"
+}
+
 /** Colored dot indicator showing pace status */
 function PaceIndicator({
   status,
@@ -300,51 +304,77 @@ export function ProviderCard({
         {!showSkeleton && !error && (
           <div className="space-y-4">
             {groupedLines.ungrouped.map((line, index) => (
-              <MetricLineRenderer
-                key={`plain-${line.label}-${index}`}
-                line={line}
-                displayMode={displayMode}
-                now={now}
-              />
+              isErrorBadge(line) ? (
+                <ProviderError
+                  key={`plain-error-${index}`}
+                  message={line.text}
+                />
+              ) : (
+                <MetricLineRenderer
+                  key={`plain-${line.label}-${index}`}
+                  line={line}
+                  displayMode={displayMode}
+                  now={now}
+                />
+              )
             ))}
 
-            {groupedLines.groups.map((group) => (
-              <div key={`${group.accountLabel}:${group.accountId ?? ""}`} className="rounded-md border bg-muted/40 p-2">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  {group.accountId ? (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={(props) => (
-                          <p {...props} className="text-xs text-muted-foreground font-medium">
-                            {group.accountLabel}
-                          </p>
+            {groupedLines.groups.map((group) => {
+              const contentLines = group.lines.filter((line) => !isErrorBadge(line))
+              const errorLines = group.lines.filter(isErrorBadge)
+              const hasGroupCard = contentLines.length > 0 || Boolean(group.plan)
+
+              return (
+                <div key={`${group.accountLabel}:${group.accountId ?? ""}`} className="space-y-2">
+                  {hasGroupCard ? (
+                    <div className="rounded-md border bg-muted/40 p-2">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        {group.accountId ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <p {...props} className="text-xs text-muted-foreground font-medium">
+                                  {group.accountLabel}
+                                </p>
+                              )}
+                            />
+                            <TooltipContent side="top" className="text-xs">
+                              Account ID: {group.accountId}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <p className="text-xs text-muted-foreground font-medium">{group.accountLabel}</p>
                         )}
-                      />
-                      <TooltipContent side="top" className="text-xs">
-                        Account ID: {group.accountId}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <p className="text-xs text-muted-foreground font-medium">{group.accountLabel}</p>
-                  )}
-                  {group.plan && (
-                    <Badge variant="outline" className="truncate min-w-0 max-w-[60%]" title={group.plan}>
-                      {group.plan}
-                    </Badge>
-                  )}
-                </div>
-                <div className="space-y-4">
-                  {group.lines.map((line, index) => (
-                    <MetricLineRenderer
-                      key={`${group.accountLabel}-${line.label}-${index}`}
-                      line={line}
-                      displayMode={displayMode}
-                      now={now}
+                        {group.plan && (
+                          <Badge variant="outline" className="truncate min-w-0 max-w-[60%]" title={group.plan}>
+                            {group.plan}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="space-y-4">
+                        {contentLines.map((line, index) => (
+                          <MetricLineRenderer
+                            key={`${group.accountLabel}-${line.label}-${index}`}
+                            line={line}
+                            displayMode={displayMode}
+                            now={now}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {errorLines.map((line, index) => (
+                    <ProviderError
+                      key={`${group.accountLabel}-error-${index}`}
+                      message={line.text}
+                      contextLabel={group.accountLabel}
+                      contextAccountId={group.accountId}
                     />
                   ))}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

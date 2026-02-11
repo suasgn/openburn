@@ -113,6 +113,22 @@ function isErrorLine(line: MetricLine): boolean {
   return line.type === "badge" && line.label.trim() === "Error"
 }
 
+export function extractErroredAccountIdsFromProviderOutput(output: ProviderOutput): string[] {
+  const ids = new Set<string>()
+
+  for (const line of output.lines) {
+    if (line.type !== "badge") continue
+
+    const { accountId, metricLabel } = splitAccountScopedLabel(line.label)
+    if (!accountId) continue
+    if (metricLabel.trim() !== "Error") continue
+
+    ids.add(accountId)
+  }
+
+  return Array.from(ids)
+}
+
 function prefixAccountLabel(accountLabel: string, accountId: string, metricLabel: string): string {
   return `${accountLabel.trim()}${ACCOUNT_META_DELIMITER}${accountId.trim()}${ACCOUNT_LABEL_DELIMITER}${metricLabel.trim()}`
 }
@@ -265,7 +281,9 @@ export function buildProviderOutputsFromSnapshots(args: {
       .map((account) => ({ account, snapshot: snapshotsByAccountId[account.id] }))
       .filter(
         (entry): entry is { account: AccountRecord; snapshot: AccountSnapshot } =>
-          Boolean(entry.snapshot) && entry.snapshot.providerId === providerId,
+          Boolean(entry.snapshot) &&
+          entry.snapshot.providerId === providerId &&
+          !entry.account.lastError,
       )
 
     if (accountEntries.length === 0) continue

@@ -73,6 +73,7 @@ import {
 } from "@/lib/settings"
 import {
   buildProviderOutputsFromSnapshots,
+  extractErroredAccountIdsFromProviderOutput,
   extractAccountSnapshotsFromProviderOutput,
   loadAccountSnapshots,
   pruneSnapshotsForAccounts,
@@ -494,7 +495,7 @@ function App() {
       for (const id of ids) {
         const existing = prev[id]
         next[id] = {
-          data: existing?.data ?? null,
+          data: null,
           loading: false,
           error,
           lastManualRefreshAt: existing?.lastManualRefreshAt ?? null,
@@ -526,11 +527,23 @@ function App() {
           output,
           accounts: accountsRef.current,
         })
+
+        const erroredAccountIds = extractErroredAccountIdsFromProviderOutput(output)
+        const nextSnapshots: AccountSnapshotsById = { ...accountSnapshotsRef.current }
+        let changed = false
+
+        for (const accountId of erroredAccountIds) {
+          if (!(accountId in nextSnapshots)) continue
+          delete nextSnapshots[accountId]
+          changed = true
+        }
+
         if (Object.keys(snapshots).length > 0) {
-          const nextSnapshots: AccountSnapshotsById = {
-            ...accountSnapshotsRef.current,
-            ...snapshots,
-          }
+          Object.assign(nextSnapshots, snapshots)
+          changed = true
+        }
+
+        if (changed) {
           accountSnapshotsRef.current = nextSnapshots
           void saveAccountSnapshots(nextSnapshots).catch((error) => {
             console.error("Failed to save snapshots:", error)
@@ -541,7 +554,7 @@ function App() {
       setProviderStates((prev) => ({
         ...prev,
         [output.providerId]: {
-          data: errorMessage ? (prev[output.providerId]?.data ?? null) : output,
+          data: errorMessage ? null : output,
           loading: false,
           error: errorMessage,
           // Only set cooldown timestamp for successful manual refreshes

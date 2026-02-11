@@ -40,7 +40,7 @@ Behavior:
 
 - Each `accountId` stores one latest successful snapshot for that account.
 - Cache writes are best-effort and happen after probe results are emitted.
-- Account-level `Error` lines are ignored and do not overwrite existing snapshots.
+- Account-level `Error` lines invalidate the cached snapshot for that account.
 - On app startup, cached snapshots are loaded before fresh probes begin so the UI can render last-known data instead of skeletons while loading.
 
 Stored shape:
