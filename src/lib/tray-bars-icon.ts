@@ -60,7 +60,7 @@ function normalizePercentText(style: TrayIconStyle, percentText: string | undefi
 }
 
 function getBarsForStyle(style: TrayIconStyle, bars: TrayPrimaryBar[]): TrayPrimaryBar[] {
-  if (style === "circle" || style === "provider" || style === "textOnly") return bars.slice(0, 1)
+  if (style === "circle" || style === "app" || style === "textOnly") return bars.slice(0, 1)
   return bars
 }
 
@@ -249,7 +249,7 @@ export function makeTrayBarsSvg(args: {
         )
       }
     }
-  } else if (style === "provider") {
+  } else if (style === "app") {
     const iconSize = Math.max(8, Math.round(sizePx - 2 * layout.pad * 0.1))
     const x = layout.barsX + Math.round((layout.barsWidth - iconSize) / 2)
     const y = Math.round((height - iconSize) / 2)

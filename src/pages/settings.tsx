@@ -63,11 +63,11 @@ function getPreviewBarLayout(fraction: number): { fillPercent: number; remainder
 function TrayIconStylePreview({
   style,
   isActive,
-  providerIconUrl,
+  appIconUrl,
 }: {
   style: TrayIconStyle;
   isActive: boolean;
-  providerIconUrl?: string;
+  appIconUrl?: string;
 }) {
   const trackClass = isActive ? "bg-primary-foreground/30" : "bg-foreground/15";
   const remainderClass = isActive ? "bg-primary-foreground/55" : "bg-foreground/25";
@@ -141,8 +141,8 @@ function TrayIconStylePreview({
     );
   }
 
-  if (style === "provider") {
-    if (providerIconUrl) {
+  if (style === "app") {
+    if (appIconUrl) {
       return (
         <div
           aria-hidden
@@ -151,11 +151,11 @@ function TrayIconStylePreview({
             isActive ? "bg-primary-foreground" : "bg-foreground"
           )}
           style={{
-            WebkitMaskImage: `url(${providerIconUrl})`,
+            WebkitMaskImage: `url(${appIconUrl})`,
             WebkitMaskSize: "contain",
             WebkitMaskRepeat: "no-repeat",
             WebkitMaskPosition: "center",
-            maskImage: `url(${providerIconUrl})`,
+            maskImage: `url(${appIconUrl})`,
             maskSize: "contain",
             maskRepeat: "no-repeat",
             maskPosition: "center",
@@ -163,7 +163,7 @@ function TrayIconStylePreview({
         />
       );
     }
-    // Fallback: generic provider icon (Anthropic logo)
+    // Fallback: app icon mark
     return (
       <svg
         aria-hidden
@@ -333,7 +333,7 @@ export function SettingsPage({
                   <TrayIconStylePreview
                     style={option.value}
                     isActive={isActive}
-                    providerIconUrl={option.value === "provider" ? "/favicon.svg" : undefined}
+                    appIconUrl={option.value === "app" ? "/favicon.svg" : undefined}
                   />
                 </Button>
               );
