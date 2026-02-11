@@ -147,6 +147,21 @@ export async function cancelCodexOAuth(requestId: string): Promise<boolean> {
   return invoke<boolean>("cancel_codex_oauth", { requestId })
 }
 
+export async function startAntigravityOAuth(accountId: string): Promise<OAuthStartResponse> {
+  return invoke<OAuthStartResponse>("start_antigravity_oauth", { accountId })
+}
+
+export async function finishAntigravityOAuth(
+  requestId: string,
+  timeoutMs?: number,
+): Promise<OAuthResult> {
+  return invoke<OAuthResult>("finish_antigravity_oauth", { requestId, timeoutMs })
+}
+
+export async function cancelAntigravityOAuth(requestId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_antigravity_oauth", { requestId })
+}
+
 export async function startClaudeOAuth(accountId: string): Promise<OAuthStartResponse> {
   return invoke<OAuthStartResponse>("start_claude_oauth", { accountId })
 }

@@ -46,11 +46,7 @@ struct TokenResponse {
     expires_in: i64,
 }
 
-pub fn build_authorize_url(
-    redirect_uri: &str,
-    challenge: &str,
-    state: &str,
-) -> Result<String> {
+pub fn build_authorize_url(redirect_uri: &str, challenge: &str, state: &str) -> Result<String> {
     let mut url = Url::parse(AUTH_URL)
         .map_err(|err| BackendError::Provider(format!("OAuth URL invalid: {err}")))?;
     url.query_pairs_mut()

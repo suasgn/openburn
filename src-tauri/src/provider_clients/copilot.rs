@@ -82,7 +82,9 @@ pub async fn request_device_code() -> Result<CopilotDeviceCodeResponse> {
         .form(&[("client_id", CLIENT_ID), ("scope", SCOPE)])
         .send()
         .await
-        .map_err(|err| BackendError::Provider(format!("Copilot OAuth device request failed: {err}")))?;
+        .map_err(|err| {
+            BackendError::Provider(format!("Copilot OAuth device request failed: {err}"))
+        })?;
 
     let status = response.status();
     if !status.is_success() {
@@ -132,7 +134,9 @@ pub async fn poll_for_token(
             ])
             .send()
             .await
-            .map_err(|err| BackendError::Provider(format!("Copilot OAuth token request failed: {err}")))?;
+            .map_err(|err| {
+                BackendError::Provider(format!("Copilot OAuth token request failed: {err}"))
+            })?;
 
         let status = response.status();
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
@@ -146,8 +150,9 @@ pub async fn poll_for_token(
             return Err(BackendError::Provider(message));
         }
 
-        let token = serde_json::from_str::<DeviceTokenResponse>(&body)
-            .map_err(|err| BackendError::Provider(format!("Copilot OAuth token decode failed: {err}")))?;
+        let token = serde_json::from_str::<DeviceTokenResponse>(&body).map_err(|err| {
+            BackendError::Provider(format!("Copilot OAuth token decode failed: {err}"))
+        })?;
 
         if let Some(access_token) = token.access_token {
             let expires_at = token

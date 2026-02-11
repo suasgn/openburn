@@ -86,7 +86,12 @@ interface ProviderAccountsSectionProps {
 }
 
 function supportsNativeOAuth(providerId: string): boolean {
-  return providerId === "codex" || providerId === "claude" || providerId === "copilot"
+  return (
+    providerId === "antigravity" ||
+    providerId === "codex" ||
+    providerId === "claude" ||
+    providerId === "copilot"
+  )
 }
 
 function authLabel(value?: string | null): string {

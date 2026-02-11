@@ -14,11 +14,13 @@ import { SettingsPage } from "@/pages/settings"
 import type { ProviderMeta, ProviderOutput } from "@/lib/provider-types"
 import {
   clearAccountCredentials,
+  cancelAntigravityOAuth,
   cancelClaudeOAuth,
   cancelCodexOAuth,
   cancelCopilotOAuth,
   createAccount,
   deleteAccount,
+  finishAntigravityOAuth,
   finishClaudeOAuth,
   finishCodexOAuth,
   finishCopilotOAuth,
@@ -26,6 +28,7 @@ import {
   listAccounts,
   listProviders,
   setAccountCredentials,
+  startAntigravityOAuth,
   startClaudeOAuth,
   startCodexOAuth,
   startCopilotOAuth,
@@ -797,6 +800,9 @@ function App() {
 
   const startProviderOAuth = useCallback(
     async (providerId: string, accountId: string): Promise<OAuthStartResponse> => {
+      if (providerId === "antigravity") {
+        return startAntigravityOAuth(accountId)
+      }
       if (providerId === "codex") {
         return startCodexOAuth(accountId)
       }
@@ -813,6 +819,9 @@ function App() {
 
   const finishProviderOAuth = useCallback(
     async (providerId: string, requestId: string) => {
+      if (providerId === "antigravity") {
+        return finishAntigravityOAuth(requestId, 180_000)
+      }
       if (providerId === "codex") {
         return finishCodexOAuth(requestId, 180_000)
       }
@@ -829,6 +838,10 @@ function App() {
 
   const cancelProviderOAuth = useCallback(
     async (providerId: string, requestId: string) => {
+      if (providerId === "antigravity") {
+        await cancelAntigravityOAuth(requestId)
+        return
+      }
       if (providerId === "codex") {
         await cancelCodexOAuth(requestId)
         return

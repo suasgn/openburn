@@ -30,6 +30,7 @@ Account records are persisted in JSON at:
 
 Supported `providerId` values:
 
+- `antigravity`
 - `codex`
 - `copilot`
 - `claude`

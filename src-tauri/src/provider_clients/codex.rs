@@ -73,8 +73,8 @@ pub struct OpenAiOrganization {
 }
 
 pub fn build_authorize_url(redirect_uri: &str, challenge: &str, state: &str) -> Result<String> {
-    let mut url =
-        Url::parse(AUTH_URL).map_err(|err| BackendError::Provider(format!("OAuth URL invalid: {err}")))?;
+    let mut url = Url::parse(AUTH_URL)
+        .map_err(|err| BackendError::Provider(format!("OAuth URL invalid: {err}")))?;
     url.query_pairs_mut()
         .append_pair("response_type", "code")
         .append_pair("client_id", CLIENT_ID)
@@ -291,8 +291,8 @@ async fn handle_token_response(
         .map_err(|err| BackendError::Provider(format!("OAuth token decode failed: {err}")))?;
     let expires_in = token.expires_in.unwrap_or(3600).max(1);
     let expires_at = now_unix_ms().saturating_add(expires_in.saturating_mul(1000));
-    let account_id = extract_account_id(&token)
-        .or_else(|| fallback_account_id.map(|value| value.to_string()));
+    let account_id =
+        extract_account_id(&token).or_else(|| fallback_account_id.map(|value| value.to_string()));
 
     Ok(CodexCredentials {
         kind: Some("oauth".to_string()),

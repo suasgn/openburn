@@ -1,14 +1,14 @@
 mod account_store;
-mod auth;
 #[cfg(target_os = "macos")]
 mod app_nap;
+mod auth;
 mod error;
 mod models;
+mod oauth;
 mod panel;
 mod probe;
 mod provider_clients;
 mod providers;
-mod oauth;
 mod secrets;
 mod tray;
 mod utils;
@@ -23,10 +23,8 @@ use account_store::AccountStore;
 use auth::{AuthState, PendingOAuth};
 use futures::future::join_all;
 use models::{AccountRecord, CreateAccountInput, UpdateAccountInput};
-use providers::{
-    find_provider_contract, validate_auth_strategy_for_provider, ProviderDescriptor,
-};
 use probe::{ProbeBatchCompleteEvent, ProbeBatchStarted, ProbeResultEvent, ProviderMeta};
+use providers::{find_provider_contract, validate_auth_strategy_for_provider, ProviderDescriptor};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_log::{Target, TargetKind};
 use utils::now_unix_ms;
@@ -262,7 +260,8 @@ fn ensure_oauth_account(
         .as_deref()
         .unwrap_or(provider.default_auth_strategy_id);
 
-    validate_auth_strategy_for_provider(provider, Some(effective_strategy)).map_err(|err| err.to_string())?;
+    validate_auth_strategy_for_provider(provider, Some(effective_strategy))
+        .map_err(|err| err.to_string())?;
 
     if effective_strategy != "oauth" {
         return Err(format!(
@@ -378,11 +377,14 @@ async fn finish_codex_oauth(
         }
     };
 
-    let credentials_value = serde_json::to_value(credentials.clone().with_kind())
-        .map_err(|err| err.to_string())?;
-    if let Err(err) =
-        secrets::set_account_credentials(&app, store.inner(), &pending.account_id, &credentials_value)
-    {
+    let credentials_value =
+        serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
+    if let Err(err) = secrets::set_account_credentials(
+        &app,
+        store.inner(),
+        &pending.account_id,
+        &credentials_value,
+    ) {
         auth_state.remove(&request_id);
         return Err(err.to_string());
     }
@@ -396,6 +398,94 @@ async fn finish_codex_oauth(
 
 #[tauri::command]
 fn cancel_codex_oauth(auth_state: State<'_, AuthState>, request_id: String) -> bool {
+    auth_state.cancel(&request_id)
+}
+
+#[tauri::command]
+fn start_antigravity_oauth(
+    store: State<'_, AccountStore>,
+    auth_state: State<'_, AuthState>,
+    account_id: String,
+) -> Result<OAuthStartResponse, String> {
+    let _account = ensure_oauth_account(store.inner(), &account_id, "antigravity", "Antigravity")?;
+    start_pkce_oauth_flow(
+        auth_state.inner(),
+        account_id,
+        "/auth/callback",
+        None,
+        |redirect_uri, challenge, state| {
+            provider_clients::antigravity::build_authorize_url(redirect_uri, challenge, state)
+                .map_err(|err| err.to_string())
+        },
+    )
+}
+
+#[tauri::command]
+async fn finish_antigravity_oauth(
+    app: tauri::AppHandle,
+    store: State<'_, AccountStore>,
+    auth_state: State<'_, AuthState>,
+    request_id: String,
+    timeout_ms: Option<u64>,
+) -> Result<OAuthResult, String> {
+    let pending = auth_state
+        .get(&request_id)
+        .ok_or_else(|| "OAuth flow not found".to_string())?;
+    let receiver = pending
+        .take_receiver()
+        .ok_or_else(|| "OAuth flow is already waiting for completion".to_string())?;
+    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_OAUTH_TIMEOUT_MS).max(1);
+
+    let callback = match tokio::time::timeout(Duration::from_millis(timeout_ms), receiver).await {
+        Ok(result) => match result {
+            Ok(callback) => callback.map_err(|err| err.to_string())?,
+            Err(_) => {
+                auth_state.remove(&request_id);
+                return Err("OAuth callback channel closed".to_string());
+            }
+        },
+        Err(_) => {
+            pending.cancel_flag.store(true, Ordering::SeqCst);
+            auth_state.remove(&request_id);
+            return Err("OAuth callback timed out".to_string());
+        }
+    };
+
+    let credentials = match provider_clients::antigravity::exchange_code(
+        &callback.code,
+        &pending.verifier,
+        &pending.redirect_uri,
+    )
+    .await
+    {
+        Ok(credentials) => credentials,
+        Err(err) => {
+            auth_state.remove(&request_id);
+            return Err(err.to_string());
+        }
+    };
+
+    let credentials_value =
+        serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
+    if let Err(err) = secrets::set_account_credentials(
+        &app,
+        store.inner(),
+        &pending.account_id,
+        &credentials_value,
+    ) {
+        auth_state.remove(&request_id);
+        return Err(err.to_string());
+    }
+
+    auth_state.remove(&request_id);
+    Ok(OAuthResult {
+        account_id: pending.account_id.clone(),
+        expires_at: credentials.expires_at,
+    })
+}
+
+#[tauri::command]
+fn cancel_antigravity_oauth(auth_state: State<'_, AuthState>, request_id: String) -> bool {
     auth_state.cancel(&request_id)
 }
 
@@ -464,11 +554,14 @@ async fn finish_claude_oauth(
         }
     };
 
-    let credentials_value = serde_json::to_value(credentials.clone().with_kind())
-        .map_err(|err| err.to_string())?;
-    if let Err(err) =
-        secrets::set_account_credentials(&app, store.inner(), &pending.account_id, &credentials_value)
-    {
+    let credentials_value =
+        serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
+    if let Err(err) = secrets::set_account_credentials(
+        &app,
+        store.inner(),
+        &pending.account_id,
+        &credentials_value,
+    ) {
         auth_state.remove(&request_id);
         return Err(err.to_string());
     }
@@ -555,27 +648,30 @@ async fn finish_copilot_oauth(
         Some(&pending.cancel_flag),
     );
 
-    let credentials = match tokio::time::timeout(Duration::from_millis(timeout_ms), poll_future).await
-    {
-        Ok(result) => match result {
-            Ok(credentials) => credentials,
-            Err(err) => {
+    let credentials =
+        match tokio::time::timeout(Duration::from_millis(timeout_ms), poll_future).await {
+            Ok(result) => match result {
+                Ok(credentials) => credentials,
+                Err(err) => {
+                    auth_state.remove(&request_id);
+                    return Err(err.to_string());
+                }
+            },
+            Err(_) => {
+                pending.cancel_flag.store(true, Ordering::SeqCst);
                 auth_state.remove(&request_id);
-                return Err(err.to_string());
+                return Err("OAuth callback timed out".to_string());
             }
-        },
-        Err(_) => {
-            pending.cancel_flag.store(true, Ordering::SeqCst);
-            auth_state.remove(&request_id);
-            return Err("OAuth callback timed out".to_string());
-        }
-    };
+        };
 
-    let credentials_value = serde_json::to_value(credentials.clone().with_kind())
-        .map_err(|err| err.to_string())?;
-    if let Err(err) =
-        secrets::set_account_credentials(&app, store.inner(), &pending.account_id, &credentials_value)
-    {
+    let credentials_value =
+        serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
+    if let Err(err) = secrets::set_account_credentials(
+        &app,
+        store.inner(),
+        &pending.account_id,
+        &credentials_value,
+    ) {
         auth_state.remove(&request_id);
         return Err(err.to_string());
     }
@@ -661,6 +757,9 @@ pub fn run() {
             start_codex_oauth,
             finish_codex_oauth,
             cancel_codex_oauth,
+            start_antigravity_oauth,
+            finish_antigravity_oauth,
+            cancel_antigravity_oauth,
             start_claude_oauth,
             finish_claude_oauth,
             cancel_claude_oauth,

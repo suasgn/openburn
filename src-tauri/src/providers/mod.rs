@@ -1,3 +1,4 @@
+mod antigravity;
 mod claude;
 mod codex;
 mod contract;
@@ -26,6 +27,9 @@ mod tests {
     #[test]
     fn descriptors_are_exposed() {
         let providers = all_provider_descriptors();
+        assert!(providers
+            .iter()
+            .any(|provider| provider.id == "antigravity"));
         assert!(providers.iter().any(|provider| provider.id == "codex"));
         assert!(providers.iter().any(|provider| provider.id == "copilot"));
         assert!(providers.iter().any(|provider| provider.id == "claude"));
