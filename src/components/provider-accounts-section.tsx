@@ -16,7 +16,16 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { AlertCircle, CheckCircle2, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  Copy,
+  GripVertical,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -276,6 +285,7 @@ export function ProviderAccountsSection({
   const [zaiRegionDraftByAccount, setZaiRegionDraftByAccount] = useState<Record<string, string>>(
     {},
   )
+  const [expandedAccountById, setExpandedAccountById] = useState<Record<string, boolean>>({})
   const labelSaveTimerByAccountRef = useRef<Record<string, number>>({})
   const toastTimerRef = useRef<number | null>(null)
 
@@ -344,6 +354,13 @@ export function ProviderAccountsSection({
 
     const nextIds = arrayMove(orderedAccountIds, sourceIndex, targetIndex)
     onReorderAccounts(providerId, nextIds)
+  }
+
+  const toggleAccountExpanded = (accountId: string) => {
+    setExpandedAccountById((previous) => ({
+      ...previous,
+      [accountId]: !previous[accountId],
+    }))
   }
 
   return (
@@ -463,376 +480,446 @@ export function ProviderAccountsSection({
                   <SortableContext items={orderedAccountIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-2">
                       {accounts.map((account) => {
-                    const labelValue =
-                      labelDraftByAccount[account.id] === undefined
-                        ? account.label
-                        : labelDraftByAccount[account.id]
-                    const clearCredentialsActionId = `clear-creds:${account.id}`
-                    const startOauthActionId = `oauth:start:${account.id}`
-                    const cancelOauthActionId = `oauth:cancel:${account.id}`
-                    const copyOauthUrlActionId = `oauth:copy:${account.id}`
-                    const deleteActionId = `delete:${account.id}`
-                    const oauthSession = oauthSessionByAccount[account.id]
-                    const canOAuth = supportsNativeOAuth(provider.id)
-                    const supportsManualCredentials = !canOAuth
-                    const supportsZaiCredentialForm = provider.id === "zai"
-                    const supportsJsonCredentials = supportsManualCredentials && !supportsZaiCredentialForm
-                    const oauthPending = oauthSession?.status === "pending"
-                    const oauthError = oauthSession?.status === "error"
-                    const accountFetchStatus = resolveAccountFetchStatus(account)
-                    const zaiApiKeyValue = zaiApiKeyDraftByAccount[account.id] ?? ""
-                    const zaiRegionValue = zaiRegionDraftByAccount[account.id] ?? "global"
+                        const labelValue =
+                          labelDraftByAccount[account.id] === undefined
+                            ? account.label
+                            : labelDraftByAccount[account.id]
+                        const clearCredentialsActionId = `clear-creds:${account.id}`
+                        const startOauthActionId = `oauth:start:${account.id}`
+                        const cancelOauthActionId = `oauth:cancel:${account.id}`
+                        const copyOauthUrlActionId = `oauth:copy:${account.id}`
+                        const deleteActionId = `delete:${account.id}`
+                        const oauthSession = oauthSessionByAccount[account.id]
+                        const canOAuth = supportsNativeOAuth(provider.id)
+                        const supportsManualCredentials = !canOAuth
+                        const supportsZaiCredentialForm = provider.id === "zai"
+                        const supportsJsonCredentials =
+                          supportsManualCredentials && !supportsZaiCredentialForm
+                        const oauthPending = oauthSession?.status === "pending"
+                        const oauthError = oauthSession?.status === "error"
+                        const accountFetchStatus = resolveAccountFetchStatus(account)
+                        const zaiApiKeyValue = zaiApiKeyDraftByAccount[account.id] ?? ""
+                        const zaiRegionValue = zaiRegionDraftByAccount[account.id] ?? "global"
+                        const accountExpanded = expandedAccountById[account.id] === true
 
-                    return (
-                      <SortableAccountCard
-                        key={account.id}
-                        accountId={account.id}
-                        className="rounded-md border bg-card p-2 space-y-2"
-                      >
-                        {({ dragAttributes, dragListeners }) => {
-                          const dragHandleProps = {
-                            ...dragAttributes,
-                            ...dragListeners,
-                          } as unknown as Record<string, unknown>
+                        return (
+                          <SortableAccountCard
+                            key={account.id}
+                            accountId={account.id}
+                            className="rounded-md border bg-card p-2 space-y-2"
+                          >
+                            {({ dragAttributes, dragListeners }) => {
+                              const dragHandleProps = {
+                                ...dragAttributes,
+                                ...dragListeners,
+                              } as unknown as Record<string, unknown>
 
-                          return (
-                        <>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <Tooltip>
-                                <TooltipTrigger
-                                  render={(props) => (
-                                    <p
-                                      {...props}
-                                      className="text-sm font-medium truncate cursor-grab active:cursor-grabbing"
-                                      {...(dragHandleProps as Record<string, unknown>)}
+                              return (
+                                <>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <button
+                                      type="button"
+                                      className="min-w-0 flex-1 rounded-sm px-1 py-0.5 text-left hover:bg-muted/70"
+                                      aria-expanded={accountExpanded}
+                                      aria-controls={`account-panel-${account.id}`}
+                                      onClick={() => toggleAccountExpanded(account.id)}
                                     >
-                                      {account.label}
-                                    </p>
+                                      <div className="flex items-center gap-1.5">
+                                        <Tooltip>
+                                          <TooltipTrigger
+                                            render={(props) => (
+                                              <p {...props} className="text-sm font-medium truncate">
+                                                {account.label}
+                                              </p>
+                                            )}
+                                          />
+                                          <TooltipContent side="top" className="text-xs">
+                                            Account ID: {account.id}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                        <Tooltip>
+                                          <TooltipTrigger
+                                            render={(props) => (
+                                              <span
+                                                {...props}
+                                                className={`inline-block size-2 rounded-full ${accountFetchStatus.dotClass}`}
+                                                aria-label={accountFetchStatus.label}
+                                              />
+                                            )}
+                                          />
+                                          <TooltipContent side="top" className="text-xs">
+                                            <div className="font-medium">{accountFetchStatus.label}</div>
+                                            <div className="opacity-80">{accountFetchStatus.detail}</div>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                        <ChevronDown
+                                          className={cn(
+                                            "size-3 text-muted-foreground transition-transform",
+                                            accountExpanded && "rotate-180",
+                                          )}
+                                        />
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {authLabel(account.authStrategyId)}
+                                      </p>
+                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        className="cursor-grab active:cursor-grabbing"
+                                        disabled={loading || activeAction !== null}
+                                        {...(dragHandleProps as Record<string, unknown>)}
+                                      >
+                                        <GripVertical className="size-3" />
+                                        <span className="sr-only">Reorder account</span>
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        disabled={loading || activeAction !== null}
+                                        onClick={() =>
+                                          runAction(deleteActionId, async () => {
+                                            await onDeleteAccount(provider.id, account.id)
+                                            showToast("success", `${provider.name} account removed`)
+                                          })
+                                        }
+                                      >
+                                        <Trash2 className="size-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  {accountExpanded && (
+                                    <div id={`account-panel-${account.id}`} className="space-y-2">
+                                      <div className="flex gap-1">
+                                        <input
+                                          value={labelValue}
+                                          onChange={(event) => {
+                                            const value = event.target.value
+                                            setLabelDraftByAccount((previous) => ({
+                                              ...previous,
+                                              [account.id]: value,
+                                            }))
+
+                                            const existingTimer =
+                                              labelSaveTimerByAccountRef.current[account.id]
+                                            if (existingTimer) {
+                                              window.clearTimeout(existingTimer)
+                                              delete labelSaveTimerByAccountRef.current[account.id]
+                                            }
+
+                                            const trimmed = value.trim()
+                                            if (!trimmed || trimmed === account.label) {
+                                              return
+                                            }
+
+                                            labelSaveTimerByAccountRef.current[account.id] =
+                                              window.setTimeout(() => {
+                                                delete labelSaveTimerByAccountRef.current[account.id]
+                                                void onUpdateAccountLabel(
+                                                  provider.id,
+                                                  account.id,
+                                                  trimmed,
+                                                ).catch((error) => {
+                                                  showToast(
+                                                    "error",
+                                                    error instanceof Error
+                                                      ? error.message
+                                                      : String(error),
+                                                  )
+                                                })
+                                              }, 450)
+                                          }}
+                                          onBlur={() => {
+                                            const value = (
+                                              labelDraftByAccount[account.id] ?? account.label
+                                            ).trim()
+                                            if (!value) {
+                                              setLabelDraftByAccount((previous) => ({
+                                                ...previous,
+                                                [account.id]: account.label,
+                                              }))
+                                            }
+                                          }}
+                                          className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                                          placeholder="Account label"
+                                        />
+                                      </div>
+
+                                      {supportsZaiCredentialForm && (
+                                        <div className="space-y-2">
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div className="space-y-1">
+                                              <label className="block text-xs text-muted-foreground">
+                                                API key
+                                              </label>
+                                              <input
+                                                type="password"
+                                                value={zaiApiKeyValue}
+                                                onChange={(event) => {
+                                                  const value = event.target.value
+                                                  setZaiApiKeyDraftByAccount((previous) => ({
+                                                    ...previous,
+                                                    [account.id]: value,
+                                                  }))
+                                                }}
+                                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                                placeholder="Enter Z.ai API key"
+                                                autoComplete="off"
+                                              />
+                                            </div>
+                                            <div className="space-y-1">
+                                              <label className="block text-xs text-muted-foreground">
+                                                Region
+                                              </label>
+                                              <Tabs
+                                                value={zaiRegionValue}
+                                                onValueChange={(value) => {
+                                                  setZaiRegionDraftByAccount((previous) => ({
+                                                    ...previous,
+                                                    [account.id]: value,
+                                                  }))
+                                                }}
+                                              >
+                                                <TabsList className="h-8 w-full">
+                                                  <TabsTrigger
+                                                    value="global"
+                                                    className="text-xs"
+                                                    disabled={loading || activeAction !== null}
+                                                  >
+                                                    Global
+                                                  </TabsTrigger>
+                                                  <TabsTrigger
+                                                    value="cn"
+                                                    className="text-xs"
+                                                    disabled={loading || activeAction !== null}
+                                                  >
+                                                    China
+                                                  </TabsTrigger>
+                                                </TabsList>
+                                              </Tabs>
+                                            </div>
+                                          </div>
+                                          <p className="text-[11px] text-muted-foreground">
+                                            Region selects endpoint: Global uses api.z.ai, China uses
+                                            open.bigmodel.cn.
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      {supportsJsonCredentials && (
+                                        <textarea
+                                          value={credentialsDraftByAccount[account.id] ?? ""}
+                                          onChange={(event) => {
+                                            const value = event.target.value
+                                            setCredentialsDraftByAccount((previous) => ({
+                                              ...previous,
+                                              [account.id]: value,
+                                            }))
+                                          }}
+                                          className="min-h-28 w-full rounded-md border border-input bg-background px-2 py-2 text-xs font-mono"
+                                          placeholder={credentialTemplate(provider.id)}
+                                        />
+                                      )}
+
+                                      <div className="flex items-center gap-1">
+                                        {canOAuth && (
+                                          <>
+                                            <Button
+                                              type="button"
+                                              size="xs"
+                                              variant={oauthError ? "destructive" : "outline"}
+                                              disabled={
+                                                loading || activeAction !== null || oauthPending
+                                              }
+                                              onClick={() =>
+                                                runAction(startOauthActionId, async () => {
+                                                  await onStartAccountOAuth(provider.id, account.id)
+                                                  showToast(
+                                                    "success",
+                                                    oauthError
+                                                      ? `${provider.name} OAuth restarted`
+                                                      : `${provider.name} OAuth started`,
+                                                  )
+                                                })
+                                              }
+                                            >
+                                              {oauthError ? "Retry OAuth" : "Connect OAuth"}
+                                            </Button>
+                                            {oauthPending && (
+                                              <Button
+                                                type="button"
+                                                size="xs"
+                                                variant="outline"
+                                                disabled={loading || activeAction !== null}
+                                                onClick={() =>
+                                                  runAction(cancelOauthActionId, async () => {
+                                                    await onCancelAccountOAuth(provider.id, account.id)
+                                                    showToast(
+                                                      "success",
+                                                      `${provider.name} OAuth cancelled`,
+                                                    )
+                                                  })
+                                                }
+                                              >
+                                                Cancel OAuth
+                                              </Button>
+                                            )}
+                                          </>
+                                        )}
+                                        {supportsZaiCredentialForm && (
+                                          <Button
+                                            type="button"
+                                            size="xs"
+                                            disabled={loading || activeAction !== null}
+                                            onClick={() =>
+                                              runAction(`save-zai-creds:${account.id}`, async () => {
+                                                const apiKey = (
+                                                  zaiApiKeyDraftByAccount[account.id] ?? ""
+                                                ).trim()
+                                                if (!apiKey) {
+                                                  throw new Error("API key is required")
+                                                }
+                                                const region =
+                                                  zaiRegionDraftByAccount[account.id] ?? "global"
+                                                const credentials: Record<string, unknown> = {
+                                                  type: "apiKey",
+                                                  apiKey,
+                                                }
+                                                if (region === "cn") {
+                                                  credentials.apiRegion = "cn"
+                                                }
+                                                await onSaveAccountCredentials(
+                                                  provider.id,
+                                                  account.id,
+                                                  credentials,
+                                                )
+                                                setZaiApiKeyDraftByAccount((previous) => ({
+                                                  ...previous,
+                                                  [account.id]: "",
+                                                }))
+                                                showToast(
+                                                  "success",
+                                                  `${provider.name} credentials saved`,
+                                                )
+                                              })
+                                            }
+                                          >
+                                            Save credentials
+                                          </Button>
+                                        )}
+                                        {supportsJsonCredentials && (
+                                          <Button
+                                            type="button"
+                                            size="xs"
+                                            disabled={loading || activeAction !== null}
+                                            onClick={() =>
+                                              runAction(`save-creds:${account.id}`, async () => {
+                                                const parsed = parseCredentialsInput(
+                                                  credentialsDraftByAccount[account.id] ?? "",
+                                                )
+                                                if (parsed.error || !parsed.value) {
+                                                  throw new Error(
+                                                    parsed.error || "Invalid credentials",
+                                                  )
+                                                }
+                                                await onSaveAccountCredentials(
+                                                  provider.id,
+                                                  account.id,
+                                                  parsed.value,
+                                                )
+                                                setCredentialsDraftByAccount((previous) => ({
+                                                  ...previous,
+                                                  [account.id]: "",
+                                                }))
+                                                showToast(
+                                                  "success",
+                                                  `${provider.name} credentials saved`,
+                                                )
+                                              })
+                                            }
+                                          >
+                                            Save credentials
+                                          </Button>
+                                        )}
+                                        {account.hasCredentials && (
+                                          <Button
+                                            type="button"
+                                            size="xs"
+                                            variant="outline"
+                                            disabled={loading || activeAction !== null}
+                                            onClick={() =>
+                                              runAction(clearCredentialsActionId, async () => {
+                                                await onClearAccountCredentials(provider.id, account.id)
+                                                showToast(
+                                                  "success",
+                                                  `${provider.name} credentials cleared`,
+                                                )
+                                              })
+                                            }
+                                          >
+                                            Clear credentials
+                                          </Button>
+                                        )}
+                                      </div>
+
+                                      {canOAuth && oauthSession?.url && (
+                                        <div className="rounded-md border border-dashed p-2 text-xs">
+                                          <p className="font-medium text-foreground">
+                                            {oauthPending ? "OAuth in progress" : "OAuth status"}
+                                          </p>
+                                          {oauthSession.userCode && (
+                                            <p className="text-muted-foreground mt-1">
+                                              Enter code:{" "}
+                                              <span className="font-mono">{oauthSession.userCode}</span>
+                                            </p>
+                                          )}
+                                          <p className="text-muted-foreground mt-1 break-all">
+                                            {oauthSession.url}
+                                          </p>
+                                          <div className="mt-1 flex items-center gap-1">
+                                            <Button
+                                              type="button"
+                                              size="xs"
+                                              variant="outline"
+                                              disabled={loading || activeAction !== null}
+                                              onClick={() =>
+                                                runAction(copyOauthUrlActionId, async () => {
+                                                  if (!oauthSession.url) {
+                                                    throw new Error("OAuth URL is not available")
+                                                  }
+                                                  if (!navigator.clipboard?.writeText) {
+                                                    throw new Error("Clipboard is unavailable")
+                                                  }
+                                                  await navigator.clipboard.writeText(
+                                                    oauthSession.url,
+                                                  )
+                                                  showToast("success", "OAuth URL copied")
+                                                })
+                                              }
+                                            >
+                                              <Copy className="size-3" />
+                                              Copy URL
+                                            </Button>
+                                          </div>
+                                          {oauthError && oauthSession.message && (
+                                            <p className="text-destructive mt-1 break-words">
+                                              {oauthSession.message}
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
-                                />
-                                <TooltipContent side="top" className="text-xs">
-                                  Account ID: {account.id}
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger
-                                  render={(props) => (
-                                    <span
-                                      {...props}
-                                      className={`inline-block size-2 rounded-full ${accountFetchStatus.dotClass}`}
-                                      aria-label={accountFetchStatus.label}
-                                    />
-                                  )}
-                                />
-                                <TooltipContent side="top" className="text-xs">
-                                  <div className="font-medium">{accountFetchStatus.label}</div>
-                                  <div className="opacity-80">{accountFetchStatus.detail}</div>
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {authLabel(account.authStrategyId)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              disabled={loading || activeAction !== null}
-                              onClick={() =>
-                                runAction(deleteActionId, async () => {
-                                  await onDeleteAccount(provider.id, account.id)
-                                  showToast("success", `${provider.name} account removed`)
-                                })
-                              }
-                            >
-                              <Trash2 className="size-3" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-1">
-                          <input
-                            value={labelValue}
-                            onChange={(event) => {
-                              const value = event.target.value
-                              setLabelDraftByAccount((previous) => ({
-                                ...previous,
-                                [account.id]: value,
-                              }))
-
-                              const existingTimer = labelSaveTimerByAccountRef.current[account.id]
-                              if (existingTimer) {
-                                window.clearTimeout(existingTimer)
-                                delete labelSaveTimerByAccountRef.current[account.id]
-                              }
-
-                              const trimmed = value.trim()
-                              if (!trimmed || trimmed === account.label) {
-                                return
-                              }
-
-                              labelSaveTimerByAccountRef.current[account.id] = window.setTimeout(() => {
-                                delete labelSaveTimerByAccountRef.current[account.id]
-                                void onUpdateAccountLabel(provider.id, account.id, trimmed).catch((error) => {
-                                  showToast(
-                                    "error",
-                                    error instanceof Error ? error.message : String(error),
-                                  )
-                                })
-                              }, 450)
+                                </>
+                              )
                             }}
-                            onBlur={() => {
-                              const value = (labelDraftByAccount[account.id] ?? account.label).trim()
-                              if (!value) {
-                                setLabelDraftByAccount((previous) => ({
-                                  ...previous,
-                                  [account.id]: account.label,
-                                }))
-                              }
-                            }}
-                            className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
-                            placeholder="Account label"
-                          />
-                        </div>
-
-                        {supportsZaiCredentialForm && (
-                          <div className="space-y-2">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="block text-xs text-muted-foreground">API key</label>
-                                <input
-                                  type="password"
-                                  value={zaiApiKeyValue}
-                                  onChange={(event) => {
-                                    const value = event.target.value
-                                    setZaiApiKeyDraftByAccount((previous) => ({
-                                      ...previous,
-                                      [account.id]: value,
-                                    }))
-                                  }}
-                                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                                  placeholder="Enter Z.ai API key"
-                                  autoComplete="off"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-xs text-muted-foreground">Region</label>
-                                <Tabs
-                                  value={zaiRegionValue}
-                                  onValueChange={(value) => {
-                                    setZaiRegionDraftByAccount((previous) => ({
-                                      ...previous,
-                                      [account.id]: value,
-                                    }))
-                                  }}
-                                >
-                                  <TabsList className="h-8 w-full">
-                                    <TabsTrigger
-                                      value="global"
-                                      className="text-xs"
-                                      disabled={loading || activeAction !== null}
-                                    >
-                                      Global
-                                    </TabsTrigger>
-                                    <TabsTrigger
-                                      value="cn"
-                                      className="text-xs"
-                                      disabled={loading || activeAction !== null}
-                                    >
-                                      China
-                                    </TabsTrigger>
-                                  </TabsList>
-                                </Tabs>
-                              </div>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground">
-                              Region selects endpoint: Global uses api.z.ai, China uses open.bigmodel.cn.
-                            </p>
-                          </div>
-                        )}
-
-                        {supportsJsonCredentials && (
-                          <textarea
-                            value={credentialsDraftByAccount[account.id] ?? ""}
-                            onChange={(event) => {
-                              const value = event.target.value
-                              setCredentialsDraftByAccount((previous) => ({
-                                ...previous,
-                                [account.id]: value,
-                              }))
-                            }}
-                            className="min-h-28 w-full rounded-md border border-input bg-background px-2 py-2 text-xs font-mono"
-                            placeholder={credentialTemplate(provider.id)}
-                          />
-                        )}
-
-                        <div className="flex items-center gap-1">
-                          {canOAuth && (
-                            <>
-                              <Button
-                                type="button"
-                                size="xs"
-                                variant={oauthError ? "destructive" : "outline"}
-                                disabled={loading || activeAction !== null || oauthPending}
-                                onClick={() =>
-                                  runAction(startOauthActionId, async () => {
-                                    await onStartAccountOAuth(provider.id, account.id)
-                                    showToast(
-                                      "success",
-                                      oauthError
-                                        ? `${provider.name} OAuth restarted`
-                                        : `${provider.name} OAuth started`,
-                                    )
-                                  })
-                                }
-                              >
-                                {oauthError ? "Retry OAuth" : "Connect OAuth"}
-                              </Button>
-                              {oauthPending && (
-                                <Button
-                                  type="button"
-                                  size="xs"
-                                  variant="outline"
-                                  disabled={loading || activeAction !== null}
-                                  onClick={() =>
-                                    runAction(cancelOauthActionId, async () => {
-                                      await onCancelAccountOAuth(provider.id, account.id)
-                                      showToast("success", `${provider.name} OAuth cancelled`)
-                                    })
-                                  }
-                                >
-                                  Cancel OAuth
-                                </Button>
-                              )}
-                            </>
-                          )}
-                          {supportsZaiCredentialForm && (
-                            <Button
-                              type="button"
-                              size="xs"
-                              disabled={loading || activeAction !== null}
-                              onClick={() =>
-                                runAction(`save-zai-creds:${account.id}`, async () => {
-                                  const apiKey = (zaiApiKeyDraftByAccount[account.id] ?? "").trim()
-                                  if (!apiKey) {
-                                    throw new Error("API key is required")
-                                  }
-                                  const region = zaiRegionDraftByAccount[account.id] ?? "global"
-                                  const credentials: Record<string, unknown> = {
-                                    type: "apiKey",
-                                    apiKey,
-                                  }
-                                  if (region === "cn") {
-                                    credentials.apiRegion = "cn"
-                                  }
-                                  await onSaveAccountCredentials(provider.id, account.id, credentials)
-                                  setZaiApiKeyDraftByAccount((previous) => ({
-                                    ...previous,
-                                    [account.id]: "",
-                                  }))
-                                  showToast("success", `${provider.name} credentials saved`)
-                                })
-                              }
-                            >
-                              Save credentials
-                            </Button>
-                          )}
-                          {supportsJsonCredentials && (
-                            <Button
-                              type="button"
-                              size="xs"
-                              disabled={loading || activeAction !== null}
-                              onClick={() =>
-                                runAction(`save-creds:${account.id}`, async () => {
-                                  const parsed = parseCredentialsInput(
-                                    credentialsDraftByAccount[account.id] ?? "",
-                                  )
-                                  if (parsed.error || !parsed.value) {
-                                    throw new Error(parsed.error || "Invalid credentials")
-                                  }
-                                  await onSaveAccountCredentials(
-                                    provider.id,
-                                    account.id,
-                                    parsed.value,
-                                  )
-                                  setCredentialsDraftByAccount((previous) => ({
-                                    ...previous,
-                                    [account.id]: "",
-                                  }))
-                                  showToast("success", `${provider.name} credentials saved`)
-                                })
-                              }
-                            >
-                              Save credentials
-                            </Button>
-                          )}
-                          {account.hasCredentials && (
-                            <Button
-                              type="button"
-                              size="xs"
-                              variant="outline"
-                              disabled={loading || activeAction !== null}
-                              onClick={() =>
-                                runAction(clearCredentialsActionId, async () => {
-                                  await onClearAccountCredentials(provider.id, account.id)
-                                  showToast("success", `${provider.name} credentials cleared`)
-                                })
-                              }
-                            >
-                              Clear credentials
-                            </Button>
-                          )}
-                        </div>
-
-                        {canOAuth && oauthSession?.url && (
-                          <div className="rounded-md border border-dashed p-2 text-xs">
-                            <p className="font-medium text-foreground">
-                              {oauthPending ? "OAuth in progress" : "OAuth status"}
-                            </p>
-                            {oauthSession.userCode && (
-                              <p className="text-muted-foreground mt-1">
-                                Enter code: <span className="font-mono">{oauthSession.userCode}</span>
-                              </p>
-                            )}
-                            <p className="text-muted-foreground mt-1 break-all">{oauthSession.url}</p>
-                            <div className="mt-1 flex items-center gap-1">
-                              <Button
-                                type="button"
-                                size="xs"
-                                variant="outline"
-                                disabled={loading || activeAction !== null}
-                                onClick={() =>
-                                  runAction(copyOauthUrlActionId, async () => {
-                                    if (!oauthSession.url) {
-                                      throw new Error("OAuth URL is not available")
-                                    }
-                                    if (!navigator.clipboard?.writeText) {
-                                      throw new Error("Clipboard is unavailable")
-                                    }
-                                    await navigator.clipboard.writeText(oauthSession.url)
-                                    showToast("success", "OAuth URL copied")
-                                  })
-                                }
-                              >
-                                <Copy className="size-3" />
-                                Copy URL
-                              </Button>
-                            </div>
-                            {oauthError && oauthSession.message && (
-                              <p className="text-destructive mt-1 break-words">{oauthSession.message}</p>
-                            )}
-                          </div>
-                        )}
-                        </>
-                          )
-                        }}
-                      </SortableAccountCard>
-                    )
-                  })}
+                          </SortableAccountCard>
+                        )
+                      })}
                     </div>
                   </SortableContext>
                 </DndContext>

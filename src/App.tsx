@@ -13,6 +13,11 @@ import { ProviderDetailPage } from "@/pages/provider-detail"
 import { SettingsPage } from "@/pages/settings"
 import type { ProviderMeta, ProviderOutput } from "@/lib/provider-types"
 import {
+  ACCOUNT_LABEL_DELIMITER,
+  ACCOUNT_META_DELIMITER,
+  splitAccountScopedLabel,
+} from "@/lib/account-scoped-label"
+import {
   clearAccountCredentials,
   cancelAntigravityOAuth,
   cancelClaudeOAuth,
@@ -105,6 +110,80 @@ type AccountOAuthSession = {
   url?: string
   userCode?: string | null
   message?: string
+}
+
+function toScopedAccountLabel(accountLabel: string, accountId: string, metricLabel: string): string {
+  return `${accountLabel.trim()}${ACCOUNT_META_DELIMITER}${accountId.trim()}${ACCOUNT_LABEL_DELIMITER}${metricLabel.trim()}`
+}
+
+function rewriteMetricLineAccountLabel(
+  line: ProviderOutput["lines"][number],
+  accountId: string,
+  accountLabel: string,
+): ProviderOutput["lines"][number] {
+  const parsed = splitAccountScopedLabel(line.label)
+  if (!parsed.accountId || parsed.accountId !== accountId) {
+    return line
+  }
+
+  const nextLabel = toScopedAccountLabel(accountLabel, accountId, parsed.metricLabel)
+  if (nextLabel === line.label) {
+    return line
+  }
+
+  return {
+    ...line,
+    label: nextLabel,
+  }
+}
+
+function rewriteProviderOutputAccountLabel(
+  output: ProviderOutput,
+  accountId: string,
+  accountLabel: string,
+): ProviderOutput {
+  let changed = false
+  const nextLines = output.lines.map((line) => {
+    const nextLine = rewriteMetricLineAccountLabel(line, accountId, accountLabel)
+    if (nextLine !== line) {
+      changed = true
+    }
+    return nextLine
+  })
+
+  if (!changed) {
+    return output
+  }
+
+  return {
+    ...output,
+    lines: nextLines,
+  }
+}
+
+function rewriteProviderStateAccountLabel(
+  previous: Record<string, ProviderState>,
+  providerId: string,
+  accountId: string,
+  accountLabel: string,
+): Record<string, ProviderState> {
+  const state = previous[providerId]
+  if (!state?.data) {
+    return previous
+  }
+
+  const nextData = rewriteProviderOutputAccountLabel(state.data, accountId, accountLabel)
+  if (nextData === state.data) {
+    return previous
+  }
+
+  return {
+    ...previous,
+    [providerId]: {
+      ...state,
+      data: nextData,
+    },
+  }
 }
 
 function App() {
@@ -760,11 +839,63 @@ function App() {
 
   const handleUpdateProviderAccountLabel = useCallback(
     async (providerId: string, accountId: string, label: string) => {
-      await updateAccount(accountId, { label })
-      await reloadAccounts()
-      triggerProviderProbe(providerId)
+      const nextLabel = label.trim()
+      if (!nextLabel) {
+        return
+      }
+
+      const existingAccount = accountsRef.current.find((account) => account.id === accountId)
+      if (!existingAccount) {
+        throw new Error("Account not found")
+      }
+
+      const previousLabel = existingAccount.label
+      if (previousLabel === nextLabel) {
+        return
+      }
+
+      setAccounts((previous) =>
+        previous.map((account) =>
+          account.id === accountId
+            ? {
+                ...account,
+                label: nextLabel,
+              }
+            : account,
+        ),
+      )
+
+      setProviderStates((previous) =>
+        rewriteProviderStateAccountLabel(previous, providerId, accountId, nextLabel),
+      )
+
+      try {
+        await updateAccount(accountId, { label: nextLabel })
+      } catch (error) {
+        let reverted = false
+        setAccounts((previous) =>
+          previous.map((account) => {
+            if (account.id !== accountId || account.label !== nextLabel) {
+              return account
+            }
+            reverted = true
+            return {
+              ...account,
+              label: previousLabel,
+            }
+          }),
+        )
+
+        if (reverted) {
+          setProviderStates((previous) =>
+            rewriteProviderStateAccountLabel(previous, providerId, accountId, previousLabel),
+          )
+        }
+
+        throw error
+      }
     },
-    [reloadAccounts, triggerProviderProbe],
+    [],
   )
 
   const handleDeleteProviderAccount = useCallback(
