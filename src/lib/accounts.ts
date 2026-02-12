@@ -191,3 +191,18 @@ export async function finishCopilotOAuth(
 export async function cancelCopilotOAuth(requestId: string): Promise<boolean> {
   return invoke<boolean>("cancel_copilot_oauth", { requestId })
 }
+
+export async function startOpencodeOAuth(accountId: string): Promise<OAuthStartResponse> {
+  return invoke<OAuthStartResponse>("start_opencode_oauth", { accountId })
+}
+
+export async function finishOpencodeOAuth(
+  requestId: string,
+  timeoutMs?: number,
+): Promise<OAuthResult> {
+  return invoke<OAuthResult>("finish_opencode_oauth", { requestId, timeoutMs })
+}
+
+export async function cancelOpencodeOAuth(requestId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_opencode_oauth", { requestId })
+}

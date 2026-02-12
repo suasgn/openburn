@@ -115,6 +115,44 @@ const COPILOT_LINES: [ManifestLineSpec; 3] = [
     },
 ];
 
+const OPENCODE_LINES: [ManifestLineSpec; 7] = [
+    ManifestLineSpec {
+        line_type: "progress",
+        label: "Session",
+        scope: "overview",
+    },
+    ManifestLineSpec {
+        line_type: "progress",
+        label: "Weekly",
+        scope: "overview",
+    },
+    ManifestLineSpec {
+        line_type: "text",
+        label: "Monthly Cost",
+        scope: "overview",
+    },
+    ManifestLineSpec {
+        line_type: "badge",
+        label: "Usage Rows",
+        scope: "detail",
+    },
+    ManifestLineSpec {
+        line_type: "badge",
+        label: "API Keys",
+        scope: "detail",
+    },
+    ManifestLineSpec {
+        line_type: "badge",
+        label: "Models",
+        scope: "detail",
+    },
+    ManifestLineSpec {
+        line_type: "badge",
+        label: "Subscription Rows",
+        scope: "detail",
+    },
+];
+
 const ZAI_LINES: [ManifestLineSpec; 2] = [
     ManifestLineSpec {
         line_type: "progress",
@@ -161,6 +199,7 @@ const ANTIGRAVITY_PRIMARY_CANDIDATES: [&str; 5] = [
 const CODEX_PRIMARY_CANDIDATES: [&str; 1] = ["Session"];
 const COPILOT_PRIMARY_CANDIDATES: [&str; 2] = ["Premium", "Chat"];
 const CLAUDE_PRIMARY_CANDIDATES: [&str; 1] = ["Session"];
+const OPENCODE_PRIMARY_CANDIDATES: [&str; 1] = ["Session"];
 const ZAI_PRIMARY_CANDIDATES: [&str; 2] = ["Token Usage", "Utility Usage"];
 
 #[derive(Debug, Clone, Copy)]
@@ -348,17 +387,56 @@ impl ProviderRuntime for ZaiRuntime {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct OpencodeRuntime;
+
+impl ProviderRuntime for OpencodeRuntime {
+    fn id(&self) -> &'static str {
+        "opencode"
+    }
+
+    fn name(&self) -> &'static str {
+        "OpenCode"
+    }
+
+    fn icon_url(&self) -> &'static str {
+        "/providers/opencode.svg"
+    }
+
+    fn brand_color(&self) -> Option<&'static str> {
+        Some("#3B82F6")
+    }
+
+    fn lines(&self) -> &'static [ManifestLineSpec] {
+        &OPENCODE_LINES
+    }
+
+    fn primary_candidates(&self) -> &'static [&'static str] {
+        &OPENCODE_PRIMARY_CANDIDATES
+    }
+
+    fn probe<'a>(
+        &self,
+        account: &'a AccountRecord,
+        credentials: serde_json::Value,
+    ) -> ProbeFuture<'a> {
+        Box::pin(super::opencode::probe::probe(account, credentials))
+    }
+}
+
 const ANTIGRAVITY_RUNTIME: AntigravityRuntime = AntigravityRuntime;
 const CODEX_RUNTIME: CodexRuntime = CodexRuntime;
 const COPILOT_RUNTIME: CopilotRuntime = CopilotRuntime;
 const CLAUDE_RUNTIME: ClaudeRuntime = ClaudeRuntime;
+const OPENCODE_RUNTIME: OpencodeRuntime = OpencodeRuntime;
 const ZAI_RUNTIME: ZaiRuntime = ZaiRuntime;
 
-const RUNTIMES: [&dyn ProviderRuntime; 5] = [
+const RUNTIMES: [&dyn ProviderRuntime; 6] = [
     &ANTIGRAVITY_RUNTIME,
     &CODEX_RUNTIME,
     &COPILOT_RUNTIME,
     &CLAUDE_RUNTIME,
+    &OPENCODE_RUNTIME,
     &ZAI_RUNTIME,
 ];
 

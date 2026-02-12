@@ -12,8 +12,15 @@ pub const API_KEY_AUTH_STRATEGY: AuthStrategyContract = AuthStrategyContract {
     kind: AuthStrategyKind::ApiKey,
 };
 
+pub const COOKIE_AUTH_STRATEGY: AuthStrategyContract = AuthStrategyContract {
+    id: "cookie",
+    label: "Cookie",
+    kind: AuthStrategyKind::Cookie,
+};
+
 pub const OAUTH_AUTH_STRATEGIES: &[AuthStrategyContract] = &[OAUTH_AUTH_STRATEGY];
 pub const API_KEY_AUTH_STRATEGIES: &[AuthStrategyContract] = &[API_KEY_AUTH_STRATEGY];
+pub const COOKIE_AUTH_STRATEGIES: &[AuthStrategyContract] = &[COOKIE_AUTH_STRATEGY];
 
 pub const OPEN_SETTINGS: SettingsContract = SettingsContract {
     required_keys: &[],
@@ -67,6 +74,7 @@ pub struct AuthStrategyContract {
 pub enum AuthStrategyKind {
     OAuth,
     ApiKey,
+    Cookie,
     None,
 }
 
@@ -98,4 +106,8 @@ pub const fn oauth_provider_contract(id: &'static str, name: &'static str) -> Pr
 
 pub const fn api_key_provider_contract(id: &'static str, name: &'static str) -> ProviderContract {
     provider_contract(id, name, "apiKey", API_KEY_AUTH_STRATEGIES, OPEN_SETTINGS)
+}
+
+pub const fn cookie_provider_contract(id: &'static str, name: &'static str) -> ProviderContract {
+    provider_contract(id, name, "cookie", COOKIE_AUTH_STRATEGIES, OPEN_SETTINGS)
 }

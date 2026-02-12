@@ -1,12 +1,13 @@
 use super::contract::ProviderContract;
 use super::descriptor::ProviderDescriptor;
-use super::{antigravity, claude, codex, copilot, zai};
+use super::{antigravity, claude, codex, copilot, opencode, zai};
 
-const PROVIDERS: [ProviderContract; 5] = [
+const PROVIDERS: [ProviderContract; 6] = [
     antigravity::CONTRACT,
     codex::CONTRACT,
     copilot::CONTRACT,
     claude::CONTRACT,
+    opencode::CONTRACT,
     zai::CONTRACT,
 ];
 

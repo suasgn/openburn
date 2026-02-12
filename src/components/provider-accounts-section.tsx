@@ -99,7 +99,8 @@ function supportsNativeOAuth(providerId: string): boolean {
     providerId === "antigravity" ||
     providerId === "codex" ||
     providerId === "claude" ||
-    providerId === "copilot"
+    providerId === "copilot" ||
+    providerId === "opencode"
   )
 }
 
@@ -107,6 +108,7 @@ function authLabel(value?: string | null): string {
   if (!value) return "Default"
   if (value === "oauth") return "OAuth"
   if (value === "apiKey") return "API Key"
+  if (value === "cookie") return "Cookie"
   return value
 }
 
@@ -497,6 +499,14 @@ export function ProviderAccountsSection({
                           supportsManualCredentials && !supportsZaiCredentialForm
                         const oauthPending = oauthSession?.status === "pending"
                         const oauthError = oauthSession?.status === "error"
+                        const connectLabel =
+                          provider.id === "opencode"
+                            ? oauthError
+                              ? "Retry Login"
+                              : "Connect Session"
+                            : oauthError
+                              ? "Retry OAuth"
+                              : "Connect OAuth"
                         const accountFetchStatus = resolveAccountFetchStatus(account)
                         const zaiApiKeyValue = zaiApiKeyDraftByAccount[account.id] ?? ""
                         const zaiRegionValue = zaiRegionDraftByAccount[account.id] ?? "global"
@@ -740,14 +750,18 @@ export function ProviderAccountsSection({
                                                   await onStartAccountOAuth(provider.id, account.id)
                                                   showToast(
                                                     "success",
-                                                    oauthError
-                                                      ? `${provider.name} OAuth restarted`
-                                                      : `${provider.name} OAuth started`,
+                                                    provider.id === "opencode"
+                                                      ? oauthError
+                                                        ? `${provider.name} login restarted`
+                                                        : `${provider.name} login started`
+                                                      : oauthError
+                                                        ? `${provider.name} OAuth restarted`
+                                                        : `${provider.name} OAuth started`,
                                                   )
                                                 })
                                               }
                                             >
-                                              {oauthError ? "Retry OAuth" : "Connect OAuth"}
+                                              {connectLabel}
                                             </Button>
                                             {oauthPending && (
                                               <Button
@@ -760,7 +774,9 @@ export function ProviderAccountsSection({
                                                     await onCancelAccountOAuth(provider.id, account.id)
                                                     showToast(
                                                       "success",
-                                                      `${provider.name} OAuth cancelled`,
+                                                      provider.id === "opencode"
+                                                        ? `${provider.name} login cancelled`
+                                                        : `${provider.name} OAuth cancelled`,
                                                     )
                                                   })
                                                 }

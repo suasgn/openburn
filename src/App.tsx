@@ -23,12 +23,14 @@ import {
   cancelClaudeOAuth,
   cancelCodexOAuth,
   cancelCopilotOAuth,
+  cancelOpencodeOAuth,
   createAccount,
   deleteAccount,
   finishAntigravityOAuth,
   finishClaudeOAuth,
   finishCodexOAuth,
   finishCopilotOAuth,
+  finishOpencodeOAuth,
   hasAccountCredentials,
   listAccounts,
   listProviders,
@@ -37,6 +39,7 @@ import {
   startClaudeOAuth,
   startCodexOAuth,
   startCopilotOAuth,
+  startOpencodeOAuth,
   updateAccount,
   type OAuthStartResponse,
   type AccountRecord,
@@ -943,6 +946,9 @@ function App() {
       if (providerId === "copilot") {
         return startCopilotOAuth(accountId)
       }
+      if (providerId === "opencode") {
+        return startOpencodeOAuth(accountId)
+      }
       throw new Error(`Provider does not support native OAuth: ${providerId}`)
     },
     [],
@@ -961,6 +967,9 @@ function App() {
       }
       if (providerId === "copilot") {
         return finishCopilotOAuth(requestId, 180_000)
+      }
+      if (providerId === "opencode") {
+        return finishOpencodeOAuth(requestId, 180_000)
       }
       throw new Error(`Provider does not support native OAuth: ${providerId}`)
     },
@@ -985,6 +994,10 @@ function App() {
         await cancelCopilotOAuth(requestId)
         return
       }
+      if (providerId === "opencode") {
+        await cancelOpencodeOAuth(requestId)
+        return
+      }
       throw new Error(`Provider does not support native OAuth: ${providerId}`)
     },
     [],
@@ -1006,15 +1019,19 @@ function App() {
         },
       }))
 
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      const shouldOpenExternalBrowser = providerId !== "opencode"
+
+      if (shouldOpenExternalBrowser && typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         navigator.clipboard.writeText(started.url).catch((error) => {
           console.error("Failed to copy OAuth URL:", error)
         })
       }
 
-      openUrl(started.url).catch((error) => {
-        console.error("Failed to open OAuth URL:", error)
-      })
+      if (shouldOpenExternalBrowser) {
+        openUrl(started.url).catch((error) => {
+          console.error("Failed to open OAuth URL:", error)
+        })
+      }
 
       void (async () => {
         try {

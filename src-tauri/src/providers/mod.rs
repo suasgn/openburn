@@ -5,6 +5,7 @@ pub mod common;
 mod contract;
 mod copilot;
 mod descriptor;
+mod opencode;
 mod registry;
 mod runtime;
 pub mod usage;
@@ -17,6 +18,7 @@ pub mod clients {
     pub use super::claude::client as claude;
     pub use super::codex::client as codex;
     pub use super::copilot::client as copilot;
+    pub use super::opencode::client as opencode;
     pub use super::zai::client as zai;
 }
 
@@ -47,6 +49,7 @@ mod tests {
         assert!(providers.iter().any(|provider| provider.id == "codex"));
         assert!(providers.iter().any(|provider| provider.id == "copilot"));
         assert!(providers.iter().any(|provider| provider.id == "claude"));
+        assert!(providers.iter().any(|provider| provider.id == "opencode"));
         assert!(providers.iter().any(|provider| provider.id == "zai"));
     }
 }
