@@ -1,15 +1,29 @@
 mod antigravity;
 mod claude;
 mod codex;
+pub mod common;
 mod contract;
 mod copilot;
 mod descriptor;
 mod registry;
+mod runtime;
+pub mod usage;
 mod validation;
 mod zai;
 
+#[allow(unused_imports)]
+pub mod clients {
+    pub use super::antigravity::client as antigravity;
+    pub use super::claude::client as claude;
+    pub use super::codex::client as codex;
+    pub use super::copilot::client as copilot;
+    pub use super::zai::client as zai;
+}
+
 pub use descriptor::ProviderDescriptor;
 pub use registry::{all_provider_descriptors, find_provider_contract};
+pub use runtime::{all_provider_ids, all_provider_meta, find_provider_runtime, ProviderMeta};
+pub use usage::{MetricLine, ProbeSuccess};
 pub use validation::{validate_auth_strategy_for_provider, validate_provider_settings};
 
 #[cfg(test)]

@@ -1,18 +1,6 @@
-use super::contract::{AuthStrategyContract, AuthStrategyKind, ProviderContract, SettingsContract};
+pub mod client;
+pub mod probe;
 
-const AUTH_STRATEGIES: [AuthStrategyContract; 1] = [AuthStrategyContract {
-    id: "oauth",
-    label: "OAuth",
-    kind: AuthStrategyKind::OAuth,
-}];
+use super::contract::{oauth_provider_contract, ProviderContract};
 
-pub const CONTRACT: ProviderContract = ProviderContract {
-    id: "copilot",
-    name: "Copilot",
-    default_auth_strategy_id: "oauth",
-    auth_strategies: &AUTH_STRATEGIES,
-    settings: SettingsContract {
-        required_keys: &[],
-        allow_additional_keys: true,
-    },
-};
+pub const CONTRACT: ProviderContract = oauth_provider_contract("copilot", "Copilot");

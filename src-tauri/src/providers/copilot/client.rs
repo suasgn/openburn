@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use crate::error::{BackendError, Result};
-use crate::provider_clients::shorten_body;
+use crate::providers::common::format_http_error;
 use crate::utils::now_unix_ms;
 
 const CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
@@ -89,12 +89,7 @@ pub async fn request_device_code() -> Result<CopilotDeviceCodeResponse> {
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("Copilot OAuth device request failed: HTTP {status}")
-        } else {
-            format!("Copilot OAuth device request failed: HTTP {status} - {body}")
-        };
+        let message = format_http_error("Copilot OAuth device request failed", status, &body);
         return Err(BackendError::Provider(message));
     }
 
@@ -141,12 +136,7 @@ pub async fn poll_for_token(
         let status = response.status();
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
         if !status.is_success() {
-            let body = shorten_body(&body);
-            let message = if body.is_empty() {
-                format!("Copilot OAuth token request failed: HTTP {status}")
-            } else {
-                format!("Copilot OAuth token request failed: HTTP {status} - {body}")
-            };
+            let message = format_http_error("Copilot OAuth token request failed", status, &body);
             return Err(BackendError::Provider(message));
         }
 
@@ -263,12 +253,7 @@ pub async fn fetch_usage(access_token: &str) -> Result<CopilotUsageResponse> {
     }
 
     let body = response.text().await.unwrap_or_else(|_| "".to_string());
-    let body = shorten_body(&body);
-    let message = if body.is_empty() {
-        format!("Copilot usage request failed: HTTP {status}")
-    } else {
-        format!("Copilot usage request failed: HTTP {status} - {body}")
-    };
+    let message = format_http_error("Copilot usage request failed", status, &body);
     Err(BackendError::Provider(message))
 }
 

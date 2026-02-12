@@ -1,5 +1,25 @@
 use super::descriptor::{AuthStrategyDescriptor, ProviderDescriptor};
 
+pub const OAUTH_AUTH_STRATEGY: AuthStrategyContract = AuthStrategyContract {
+    id: "oauth",
+    label: "OAuth",
+    kind: AuthStrategyKind::OAuth,
+};
+
+pub const API_KEY_AUTH_STRATEGY: AuthStrategyContract = AuthStrategyContract {
+    id: "apiKey",
+    label: "API Key",
+    kind: AuthStrategyKind::ApiKey,
+};
+
+pub const OAUTH_AUTH_STRATEGIES: &[AuthStrategyContract] = &[OAUTH_AUTH_STRATEGY];
+pub const API_KEY_AUTH_STRATEGIES: &[AuthStrategyContract] = &[API_KEY_AUTH_STRATEGY];
+
+pub const OPEN_SETTINGS: SettingsContract = SettingsContract {
+    required_keys: &[],
+    allow_additional_keys: true,
+};
+
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderContract {
     pub id: &'static str,
@@ -54,4 +74,28 @@ pub enum AuthStrategyKind {
 pub struct SettingsContract {
     pub required_keys: &'static [&'static str],
     pub allow_additional_keys: bool,
+}
+
+pub const fn provider_contract(
+    id: &'static str,
+    name: &'static str,
+    default_auth_strategy_id: &'static str,
+    auth_strategies: &'static [AuthStrategyContract],
+    settings: SettingsContract,
+) -> ProviderContract {
+    ProviderContract {
+        id,
+        name,
+        default_auth_strategy_id,
+        auth_strategies,
+        settings,
+    }
+}
+
+pub const fn oauth_provider_contract(id: &'static str, name: &'static str) -> ProviderContract {
+    provider_contract(id, name, "oauth", OAUTH_AUTH_STRATEGIES, OPEN_SETTINGS)
+}
+
+pub const fn api_key_provider_contract(id: &'static str, name: &'static str) -> ProviderContract {
+    provider_contract(id, name, "apiKey", API_KEY_AUTH_STRATEGIES, OPEN_SETTINGS)
 }

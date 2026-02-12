@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{BackendError, Result};
-use crate::provider_clients::shorten_body;
+use crate::providers::common::format_http_error;
 use crate::utils::now_unix_ms;
 
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -160,12 +160,7 @@ pub async fn fetch_usage(access_token: &str) -> Result<ClaudeUsageResponse> {
     }
 
     let body = response.text().await.unwrap_or_else(|_| "".to_string());
-    let body = shorten_body(&body);
-    let message = if body.is_empty() {
-        format!("Claude usage request failed: HTTP {status}")
-    } else {
-        format!("Claude usage request failed: HTTP {status} - {body}")
-    };
+    let message = format_http_error("Claude usage request failed", status, &body);
     Err(BackendError::Provider(message))
 }
 
@@ -173,12 +168,7 @@ async fn handle_token_response(response: reqwest::Response) -> Result<ClaudeCred
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("OAuth token request failed: HTTP {status}")
-        } else {
-            format!("OAuth token request failed: HTTP {status} - {body}")
-        };
+        let message = format_http_error("OAuth token request failed", status, &body);
         return Err(BackendError::Provider(message));
     }
 

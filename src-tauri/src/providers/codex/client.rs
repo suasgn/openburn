@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{BackendError, Result};
-use crate::provider_clients::shorten_body;
+use crate::providers::common::format_http_error;
 use crate::utils::now_unix_ms;
 
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -212,12 +212,7 @@ pub async fn fetch_usage(
     }
 
     let body = response.text().await.unwrap_or_else(|_| "".to_string());
-    let body = shorten_body(&body);
-    let message = if body.is_empty() {
-        format!("Codex usage request failed: HTTP {status}")
-    } else {
-        format!("Codex usage request failed: HTTP {status} - {body}")
-    };
+    let message = format_http_error("Codex usage request failed", status, &body);
     Err(BackendError::Provider(message))
 }
 
@@ -276,12 +271,7 @@ async fn handle_token_response(
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("OAuth token request failed: HTTP {status}")
-        } else {
-            format!("OAuth token request failed: HTTP {status} - {body}")
-        };
+        let message = format_http_error("OAuth token request failed", status, &body);
         return Err(BackendError::Provider(message));
     }
 

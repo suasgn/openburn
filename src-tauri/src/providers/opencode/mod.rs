@@ -3,4 +3,4 @@ pub mod probe;
 
 use super::contract::{oauth_provider_contract, ProviderContract};
 
-pub const CONTRACT: ProviderContract = oauth_provider_contract("antigravity", "Antigravity");
+pub const CONTRACT: ProviderContract = oauth_provider_contract("opencode", "OpenCode");

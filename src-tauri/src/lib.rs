@@ -7,7 +7,6 @@ mod models;
 mod oauth;
 mod panel;
 mod probe;
-mod provider_clients;
 mod providers;
 mod secrets;
 mod tray;
@@ -17,6 +16,7 @@ mod webkit_config;
 
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Duration;
 
 use account_store::AccountStore;
@@ -24,7 +24,9 @@ use auth::{AuthState, PendingOAuth};
 use futures::future::join_all;
 use models::{AccountRecord, CreateAccountInput, UpdateAccountInput};
 use probe::{ProbeBatchCompleteEvent, ProbeBatchStarted, ProbeResultEvent, ProviderMeta};
-use providers::{find_provider_contract, validate_auth_strategy_for_provider, ProviderDescriptor};
+use providers::{
+    clients, find_provider_contract, validate_auth_strategy_for_provider, ProviderDescriptor,
+};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_log::{Target, TargetKind};
 use utils::now_unix_ms;
@@ -313,6 +315,54 @@ where
     })
 }
 
+async fn wait_for_pkce_callback(
+    auth_state: &AuthState,
+    request_id: &str,
+    timeout_ms: Option<u64>,
+) -> Result<(Arc<PendingOAuth>, auth::OAuthCallback), String> {
+    let pending = auth_state
+        .get(request_id)
+        .ok_or_else(|| "OAuth flow not found".to_string())?;
+    let receiver = pending
+        .take_receiver()
+        .ok_or_else(|| "OAuth flow is already waiting for completion".to_string())?;
+    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_OAUTH_TIMEOUT_MS).max(1);
+
+    let callback = match tokio::time::timeout(Duration::from_millis(timeout_ms), receiver).await {
+        Ok(result) => match result {
+            Ok(callback) => callback.map_err(|err| err.to_string())?,
+            Err(_) => {
+                auth_state.remove(request_id);
+                return Err("OAuth callback channel closed".to_string());
+            }
+        },
+        Err(_) => {
+            pending.cancel_flag.store(true, Ordering::SeqCst);
+            auth_state.remove(request_id);
+            return Err("OAuth callback timed out".to_string());
+        }
+    };
+
+    Ok((pending, callback))
+}
+
+fn persist_oauth_credentials(
+    app: &tauri::AppHandle,
+    store: &AccountStore,
+    auth_state: &AuthState,
+    request_id: &str,
+    account_id: &str,
+    credentials: &serde_json::Value,
+) -> Result<(), String> {
+    if let Err(err) = secrets::set_account_credentials(app, store, account_id, credentials) {
+        auth_state.remove(request_id);
+        return Err(err.to_string());
+    }
+
+    auth_state.remove(request_id);
+    Ok(())
+}
+
 #[tauri::command]
 fn start_codex_oauth(
     store: State<'_, AccountStore>,
@@ -326,7 +376,7 @@ fn start_codex_oauth(
         "/auth/callback",
         Some(1455),
         |redirect_uri, challenge, state| {
-            provider_clients::codex::build_authorize_url(redirect_uri, challenge, state)
+            clients::codex::build_authorize_url(redirect_uri, challenge, state)
                 .map_err(|err| err.to_string())
         },
     )
@@ -340,30 +390,10 @@ async fn finish_codex_oauth(
     request_id: String,
     timeout_ms: Option<u64>,
 ) -> Result<OAuthResult, String> {
-    let pending = auth_state
-        .get(&request_id)
-        .ok_or_else(|| "OAuth flow not found".to_string())?;
-    let receiver = pending
-        .take_receiver()
-        .ok_or_else(|| "OAuth flow is already waiting for completion".to_string())?;
-    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_OAUTH_TIMEOUT_MS).max(1);
+    let (pending, callback) =
+        wait_for_pkce_callback(auth_state.inner(), &request_id, timeout_ms).await?;
 
-    let callback = match tokio::time::timeout(Duration::from_millis(timeout_ms), receiver).await {
-        Ok(result) => match result {
-            Ok(callback) => callback.map_err(|err| err.to_string())?,
-            Err(_) => {
-                auth_state.remove(&request_id);
-                return Err("OAuth callback channel closed".to_string());
-            }
-        },
-        Err(_) => {
-            pending.cancel_flag.store(true, Ordering::SeqCst);
-            auth_state.remove(&request_id);
-            return Err("OAuth callback timed out".to_string());
-        }
-    };
-
-    let credentials = match provider_clients::codex::exchange_code(
+    let credentials = match clients::codex::exchange_code(
         &callback.code,
         &pending.verifier,
         &pending.redirect_uri,
@@ -379,17 +409,15 @@ async fn finish_codex_oauth(
 
     let credentials_value =
         serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
-    if let Err(err) = secrets::set_account_credentials(
+    persist_oauth_credentials(
         &app,
         store.inner(),
+        auth_state.inner(),
+        &request_id,
         &pending.account_id,
         &credentials_value,
-    ) {
-        auth_state.remove(&request_id);
-        return Err(err.to_string());
-    }
+    )?;
 
-    auth_state.remove(&request_id);
     Ok(OAuthResult {
         account_id: pending.account_id.clone(),
         expires_at: credentials.expires_at,
@@ -414,7 +442,7 @@ fn start_antigravity_oauth(
         "/auth/callback",
         None,
         |redirect_uri, challenge, state| {
-            provider_clients::antigravity::build_authorize_url(redirect_uri, challenge, state)
+            clients::antigravity::build_authorize_url(redirect_uri, challenge, state)
                 .map_err(|err| err.to_string())
         },
     )
@@ -428,30 +456,10 @@ async fn finish_antigravity_oauth(
     request_id: String,
     timeout_ms: Option<u64>,
 ) -> Result<OAuthResult, String> {
-    let pending = auth_state
-        .get(&request_id)
-        .ok_or_else(|| "OAuth flow not found".to_string())?;
-    let receiver = pending
-        .take_receiver()
-        .ok_or_else(|| "OAuth flow is already waiting for completion".to_string())?;
-    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_OAUTH_TIMEOUT_MS).max(1);
+    let (pending, callback) =
+        wait_for_pkce_callback(auth_state.inner(), &request_id, timeout_ms).await?;
 
-    let callback = match tokio::time::timeout(Duration::from_millis(timeout_ms), receiver).await {
-        Ok(result) => match result {
-            Ok(callback) => callback.map_err(|err| err.to_string())?,
-            Err(_) => {
-                auth_state.remove(&request_id);
-                return Err("OAuth callback channel closed".to_string());
-            }
-        },
-        Err(_) => {
-            pending.cancel_flag.store(true, Ordering::SeqCst);
-            auth_state.remove(&request_id);
-            return Err("OAuth callback timed out".to_string());
-        }
-    };
-
-    let credentials = match provider_clients::antigravity::exchange_code(
+    let credentials = match clients::antigravity::exchange_code(
         &callback.code,
         &pending.verifier,
         &pending.redirect_uri,
@@ -467,17 +475,15 @@ async fn finish_antigravity_oauth(
 
     let credentials_value =
         serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
-    if let Err(err) = secrets::set_account_credentials(
+    persist_oauth_credentials(
         &app,
         store.inner(),
+        auth_state.inner(),
+        &request_id,
         &pending.account_id,
         &credentials_value,
-    ) {
-        auth_state.remove(&request_id);
-        return Err(err.to_string());
-    }
+    )?;
 
-    auth_state.remove(&request_id);
     Ok(OAuthResult {
         account_id: pending.account_id.clone(),
         expires_at: credentials.expires_at,
@@ -502,7 +508,7 @@ fn start_claude_oauth(
         "/callback",
         None,
         |redirect_uri, challenge, state| {
-            provider_clients::claude::build_authorize_url(redirect_uri, challenge, state)
+            clients::claude::build_authorize_url(redirect_uri, challenge, state)
                 .map_err(|err| err.to_string())
         },
     )
@@ -516,30 +522,10 @@ async fn finish_claude_oauth(
     request_id: String,
     timeout_ms: Option<u64>,
 ) -> Result<OAuthResult, String> {
-    let pending = auth_state
-        .get(&request_id)
-        .ok_or_else(|| "OAuth flow not found".to_string())?;
-    let receiver = pending
-        .take_receiver()
-        .ok_or_else(|| "OAuth flow is already waiting for completion".to_string())?;
-    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_OAUTH_TIMEOUT_MS).max(1);
+    let (pending, callback) =
+        wait_for_pkce_callback(auth_state.inner(), &request_id, timeout_ms).await?;
 
-    let callback = match tokio::time::timeout(Duration::from_millis(timeout_ms), receiver).await {
-        Ok(result) => match result {
-            Ok(callback) => callback.map_err(|err| err.to_string())?,
-            Err(_) => {
-                auth_state.remove(&request_id);
-                return Err("OAuth callback channel closed".to_string());
-            }
-        },
-        Err(_) => {
-            pending.cancel_flag.store(true, Ordering::SeqCst);
-            auth_state.remove(&request_id);
-            return Err("OAuth callback timed out".to_string());
-        }
-    };
-
-    let credentials = match provider_clients::claude::exchange_code(
+    let credentials = match clients::claude::exchange_code(
         &callback.code,
         &callback.state,
         &pending.verifier,
@@ -556,17 +542,15 @@ async fn finish_claude_oauth(
 
     let credentials_value =
         serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
-    if let Err(err) = secrets::set_account_credentials(
+    persist_oauth_credentials(
         &app,
         store.inner(),
+        auth_state.inner(),
+        &request_id,
         &pending.account_id,
         &credentials_value,
-    ) {
-        auth_state.remove(&request_id);
-        return Err(err.to_string());
-    }
+    )?;
 
-    auth_state.remove(&request_id);
     Ok(OAuthResult {
         account_id: pending.account_id.clone(),
         expires_at: credentials.expires_at,
@@ -586,7 +570,7 @@ async fn start_copilot_oauth(
 ) -> Result<OAuthStartResponse, String> {
     let _account = ensure_oauth_account(store.inner(), &account_id, "copilot", "Copilot")?;
 
-    let device_response = provider_clients::copilot::request_device_code()
+    let device_response = clients::copilot::request_device_code()
         .await
         .map_err(|err| err.to_string())?;
     let request_id = Uuid::new_v4().to_string();
@@ -642,11 +626,8 @@ async fn finish_copilot_oauth(
         timeout_ms = timeout_ms.min(remaining as u64);
     }
 
-    let poll_future = provider_clients::copilot::poll_for_token(
-        &device_code,
-        interval,
-        Some(&pending.cancel_flag),
-    );
+    let poll_future =
+        clients::copilot::poll_for_token(&device_code, interval, Some(&pending.cancel_flag));
 
     let credentials =
         match tokio::time::timeout(Duration::from_millis(timeout_ms), poll_future).await {
@@ -666,17 +647,15 @@ async fn finish_copilot_oauth(
 
     let credentials_value =
         serde_json::to_value(credentials.clone().with_kind()).map_err(|err| err.to_string())?;
-    if let Err(err) = secrets::set_account_credentials(
+    persist_oauth_credentials(
         &app,
         store.inner(),
+        auth_state.inner(),
+        &request_id,
         &pending.account_id,
         &credentials_value,
-    ) {
-        auth_state.remove(&request_id);
-        return Err(err.to_string());
-    }
+    )?;
 
-    auth_state.remove(&request_id);
     Ok(OAuthResult {
         account_id: pending.account_id.clone(),
         expires_at: credentials.expires_at.unwrap_or(0),

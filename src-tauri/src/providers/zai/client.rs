@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{BackendError, Result};
-use crate::provider_clients::shorten_body;
+use crate::providers::common::format_http_error;
 
 const DEFAULT_BASE_URL: &str = "https://api.z.ai";
 const CN_BASE_URL: &str = "https://open.bigmodel.cn";
@@ -114,12 +114,7 @@ pub async fn fetch_usage(credentials: &ZaiCredentials) -> Result<ZaiQuotaLimitRe
     let body = response.text().await.unwrap_or_else(|_| "".to_string());
 
     if !status.is_success() {
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("Z.ai usage request failed: HTTP {status}")
-        } else {
-            format!("Z.ai usage request failed: HTTP {status} - {body}")
-        };
+        let message = format_http_error("Z.ai usage request failed", status, &body);
         return Err(BackendError::Provider(message));
     }
 

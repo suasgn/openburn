@@ -7,7 +7,7 @@ use tokio::time::sleep;
 use url::Url;
 
 use crate::error::{BackendError, Result};
-use crate::provider_clients::shorten_body;
+use crate::providers::common::{format_http_error, format_status_error};
 use crate::utils::now_unix_ms;
 
 const CLIENT_ID: &str = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
@@ -351,12 +351,7 @@ async fn load_code_assist(access_token: &str) -> Result<AntigravityLoadResponse>
         }
 
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("HTTP {status}")
-        } else {
-            format!("HTTP {status} - {body}")
-        };
+        let message = format_status_error(status, &body);
         errors.push(format!("{endpoint} {message}"));
     }
 
@@ -414,12 +409,7 @@ async fn fetch_available_models(
         }
 
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("HTTP {status}")
-        } else {
-            format!("HTTP {status} - {body}")
-        };
+        let message = format_status_error(status, &body);
         errors.push(format!("{endpoint} {message}"));
     }
 
@@ -565,12 +555,7 @@ async fn handle_token_response(response: reqwest::Response) -> Result<TokenRespo
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
-        let body = shorten_body(&body);
-        let message = if body.is_empty() {
-            format!("OAuth token request failed: HTTP {status}")
-        } else {
-            format!("OAuth token request failed: HTTP {status} - {body}")
-        };
+        let message = format_http_error("OAuth token request failed", status, &body);
         return Err(BackendError::Provider(message));
     }
 

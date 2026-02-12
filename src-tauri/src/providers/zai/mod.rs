@@ -1,18 +1,6 @@
-use super::contract::{AuthStrategyContract, AuthStrategyKind, ProviderContract, SettingsContract};
+pub mod client;
+pub mod probe;
 
-const AUTH_STRATEGIES: [AuthStrategyContract; 1] = [AuthStrategyContract {
-    id: "apiKey",
-    label: "API Key",
-    kind: AuthStrategyKind::ApiKey,
-}];
+use super::contract::{api_key_provider_contract, ProviderContract};
 
-pub const CONTRACT: ProviderContract = ProviderContract {
-    id: "zai",
-    name: "Z.ai",
-    default_auth_strategy_id: "apiKey",
-    auth_strategies: &AUTH_STRATEGIES,
-    settings: SettingsContract {
-        required_keys: &[],
-        allow_additional_keys: true,
-    },
-};
+pub const CONTRACT: ProviderContract = api_key_provider_contract("zai", "Z.ai");
