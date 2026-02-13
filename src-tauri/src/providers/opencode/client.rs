@@ -67,8 +67,6 @@ pub struct OpenCodeUsageSnapshot {
     pub plan: Option<String>,
     pub monthly_total_cost_usd: Option<f64>,
     pub usage_rows: Option<usize>,
-    pub api_keys: Option<usize>,
-    pub models: Option<usize>,
     pub subscription_rows: Option<usize>,
 }
 
@@ -218,15 +216,6 @@ fn parse_usage_text(text: &str, workspace_id: &str) -> Result<OpenCodeUsageSnaps
         Some(costs.iter().copied().sum::<f64>())
     };
 
-    let key_names = extract_unique_strings(text, key_display_name_regex());
-    let key_ids = extract_unique_strings(text, key_id_regex());
-    let api_keys = if !key_names.is_empty() {
-        key_names.len()
-    } else {
-        key_ids.len()
-    };
-
-    let models = extract_unique_strings(text, model_regex()).len();
     let subscription_rows = subscription_true_regex().find_iter(text).count();
 
     let has_usage =
@@ -246,8 +235,6 @@ fn parse_usage_text(text: &str, workspace_id: &str) -> Result<OpenCodeUsageSnaps
         plan,
         monthly_total_cost_usd: total_cost,
         usage_rows: Some(usage_rows),
-        api_keys: Some(api_keys),
-        models: Some(models),
         subscription_rows: Some(subscription_rows),
     })
 }
@@ -410,28 +397,6 @@ fn total_cost_regex() -> &'static Regex {
     })
 }
 
-fn key_id_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r#"id\s*:\s*\"(key_[A-Za-z0-9]+)\""#).expect("key id regex should compile")
-    })
-}
-
-fn key_display_name_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r#"displayName\s*:\s*\"([^\"]+)\""#)
-            .expect("key display name regex should compile")
-    })
-}
-
-fn model_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r#"model\s*:\s*\"([^\"]+)\""#).expect("model regex should compile")
-    })
-}
-
 fn subscription_true_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
     REGEX.get_or_init(|| {
@@ -496,28 +461,6 @@ fn extract_f64_values(text: &str, regex: &Regex) -> Vec<f64> {
         .filter_map(|captures| captures.get(1))
         .filter_map(|value| value.as_str().parse::<f64>().ok())
         .collect()
-}
-
-fn extract_unique_strings(text: &str, regex: &Regex) -> Vec<String> {
-    let mut out = Vec::new();
-    for capture in regex.captures_iter(text) {
-        let Some(value) = capture.get(1) else {
-            continue;
-        };
-        let value = value.as_str().trim();
-        if value.is_empty() {
-            continue;
-        }
-        push_unique_string(&mut out, value.to_string());
-    }
-    out
-}
-
-fn push_unique_string(target: &mut Vec<String>, value: String) {
-    if target.iter().any(|existing| existing == &value) {
-        return;
-    }
-    target.push(value);
 }
 
 fn is_server_fn_null_payload(text: &str) -> bool {

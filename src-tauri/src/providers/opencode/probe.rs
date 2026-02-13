@@ -92,40 +92,20 @@ pub async fn probe(
         });
     }
 
-    if let Some(usage_rows) = snapshot.usage_rows {
-        lines.push(MetricLine::Badge {
-            label: "Usage Rows".to_string(),
-            text: usage_rows.to_string(),
-            color: None,
-            subtitle: None,
-        });
-    }
-
-    if let Some(api_keys) = snapshot.api_keys {
-        lines.push(MetricLine::Badge {
-            label: "API Keys".to_string(),
-            text: api_keys.to_string(),
-            color: None,
-            subtitle: None,
-        });
-    }
-
-    if let Some(models) = snapshot.models {
-        lines.push(MetricLine::Badge {
-            label: "Models".to_string(),
-            text: models.to_string(),
-            color: None,
-            subtitle: None,
-        });
-    }
-
     if let Some(subscription_rows) = snapshot.subscription_rows {
-        lines.push(MetricLine::Badge {
-            label: "Subscription Rows".to_string(),
-            text: subscription_rows.to_string(),
-            color: None,
-            subtitle: None,
-        });
+        let should_show = snapshot
+            .usage_rows
+            .map(|usage_rows| subscription_rows > 0 && subscription_rows != usage_rows)
+            .unwrap_or(subscription_rows > 0);
+
+        if should_show {
+            lines.push(MetricLine::Badge {
+                label: "Subscription Rows".to_string(),
+                text: subscription_rows.to_string(),
+                color: None,
+                subtitle: None,
+            });
+        }
     }
 
     if lines.is_empty() {

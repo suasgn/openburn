@@ -115,7 +115,7 @@ const COPILOT_LINES: [ManifestLineSpec; 3] = [
     },
 ];
 
-const OPENCODE_LINES: [ManifestLineSpec; 7] = [
+const OPENCODE_LINES: [ManifestLineSpec; 4] = [
     ManifestLineSpec {
         line_type: "progress",
         label: "Session",
@@ -130,21 +130,6 @@ const OPENCODE_LINES: [ManifestLineSpec; 7] = [
         line_type: "text",
         label: "Monthly Cost",
         scope: "overview",
-    },
-    ManifestLineSpec {
-        line_type: "badge",
-        label: "Usage Rows",
-        scope: "detail",
-    },
-    ManifestLineSpec {
-        line_type: "badge",
-        label: "API Keys",
-        scope: "detail",
-    },
-    ManifestLineSpec {
-        line_type: "badge",
-        label: "Models",
-        scope: "detail",
     },
     ManifestLineSpec {
         line_type: "badge",

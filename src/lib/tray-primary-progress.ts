@@ -81,6 +81,10 @@ export function getTrayPrimaryBars(args: {
       }
     }
 
+    if (typeof fraction !== "number" || !Number.isFinite(fraction)) {
+      continue
+    }
+
     out.push({ id, fraction })
     if (out.length >= maxBars) break
   }
