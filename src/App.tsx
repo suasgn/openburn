@@ -222,7 +222,7 @@ function App() {
   const [showAbout, setShowAbout] = useState(false)
 
   const trayRef = useRef<TrayIcon | null>(null)
-  const trayGaugeIconPathRef = useRef<string | null>(null)
+  const trayFallbackIconPathRef = useRef<string | null>(null)
   const trayUpdateTimerRef = useRef<number | null>(null)
   const trayUpdatePendingRef = useRef(false)
   const [trayReady, setTrayReady] = useState(false)
@@ -280,6 +280,7 @@ function App() {
 
       const style = trayIconStyleRef.current
       const maxBars = style === "bars" ? 4 : 1
+      const percentageMandatory = isTrayPercentageMandatory(style)
       const bars = getTrayPrimaryBars({
         providersMeta: providersMetaRef.current,
         providerSettings: providerSettingsRef.current,
@@ -288,16 +289,15 @@ function App() {
         displayMode: displayModeRef.current,
       })
 
-      // 0 bars: revert to the packaged gauge tray icon.
       if (bars.length === 0) {
-        const gaugePath = trayGaugeIconPathRef.current
-        if (gaugePath) {
+        const fallbackPath = trayFallbackIconPathRef.current
+        if (fallbackPath) {
           Promise.all([
-            tray.setIcon(gaugePath),
-            tray.setIconAsTemplate(true),
+            tray.setIcon(fallbackPath),
+            tray.setIconAsTemplate(false),
           ])
             .catch((e) => {
-              console.error("Failed to restore tray gauge icon:", e)
+              console.error("Failed to restore tray fallback icon:", e)
             })
             .finally(() => {
               trayUpdatePendingRef.current = false
@@ -307,8 +307,6 @@ function App() {
         }
         return
       }
-
-      const percentageMandatory = isTrayPercentageMandatory(style)
 
       let percentText: string | undefined
       if (percentageMandatory || trayShowPercentageRef.current) {
@@ -320,33 +318,23 @@ function App() {
         }
       }
 
-      if (style === "textOnly" && !percentText) {
-        const gaugePath = trayGaugeIconPathRef.current
-        if (gaugePath) {
-          Promise.all([
-            tray.setIcon(gaugePath),
-            tray.setIconAsTemplate(true),
-          ])
-            .catch((e) => {
-              console.error("Failed to restore tray gauge icon:", e)
-            })
-            .finally(() => {
-              trayUpdatePendingRef.current = false
-            })
-        } else {
-          trayUpdatePendingRef.current = false
-        }
-        return
-      }
-
       const sizePx = getTrayIconSizePx(window.devicePixelRatio)
       renderTrayBarsIcon({ bars, sizePx, style, percentText })
         .then(async (img) => {
           await tray.setIcon(img)
           await tray.setIconAsTemplate(true)
         })
-        .catch((e) => {
+        .catch(async (e) => {
           console.error("Failed to update tray icon:", e)
+          const fallbackPath = trayFallbackIconPathRef.current
+          if (fallbackPath) {
+            try {
+              await tray.setIcon(fallbackPath)
+              await tray.setIconAsTemplate(false)
+            } catch (fallbackError) {
+              console.error("Failed to restore tray fallback icon:", fallbackError)
+            }
+          }
         })
         .finally(() => {
           trayUpdatePendingRef.current = false
@@ -367,9 +355,9 @@ function App() {
         trayInitializedRef.current = true
         setTrayReady(true)
         try {
-          trayGaugeIconPathRef.current = await resolveResource("icons/tray-icon.png")
+          trayFallbackIconPathRef.current = await resolveResource("icons/Square44x44Logo.png")
         } catch (e) {
-          console.error("Failed to resolve tray gauge icon resource:", e)
+          console.error("Failed to resolve tray icon resource:", e)
         }
       } catch (e) {
         console.error("Failed to load tray icon handle:", e)

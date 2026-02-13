@@ -389,7 +389,7 @@ impl ProviderRuntime for OpencodeRuntime {
     }
 
     fn brand_color(&self) -> Option<&'static str> {
-        Some("#3B82F6")
+        Some("#211E1E")
     }
 
     fn lines(&self) -> &'static [ManifestLineSpec] {
