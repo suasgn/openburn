@@ -52,4 +52,25 @@ mod tests {
         assert!(providers.iter().any(|provider| provider.id == "opencode"));
         assert!(providers.iter().any(|provider| provider.id == "zai"));
     }
+
+    #[test]
+    fn runtime_meta_ids_match_provider_registry() {
+        let runtime_ids = all_provider_meta()
+            .into_iter()
+            .map(|provider| provider.id)
+            .collect::<Vec<_>>();
+        let descriptor_ids = all_provider_descriptors()
+            .into_iter()
+            .map(|provider| provider.id.to_string())
+            .collect::<Vec<_>>();
+
+        let runtime_set = runtime_ids.iter().collect::<std::collections::HashSet<_>>();
+        assert_eq!(runtime_set.len(), runtime_ids.len());
+
+        let descriptor_set = descriptor_ids
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(runtime_set, descriptor_set);
+    }
 }
