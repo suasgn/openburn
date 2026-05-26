@@ -683,6 +683,21 @@ mod tests {
         assert!(ids.contains(&"codex"));
         assert!(ids.contains(&"claude"));
         assert!(ids.contains(&"antigravity"));
+
+        let codex = plugins
+            .iter()
+            .find(|plugin| plugin.manifest.id == "codex")
+            .expect("codex manifest should load");
+        let codex_oauth = codex
+            .manifest
+            .auth
+            .as_ref()
+            .expect("codex auth should parse")
+            .strategies
+            .iter()
+            .find(|strategy| strategy.id == "oauth")
+            .expect("codex oauth strategy should parse");
+        assert!(codex_oauth.import_sources.is_empty());
     }
 
     #[test]
