@@ -36,6 +36,28 @@ pub fn current_auth_matches(
     Ok(auth_payload_matches(current, &candidate))
 }
 
+pub fn update_auth_if_current(
+    config: &OpenCodeExternalAuth,
+    strategy: &OpenCodeExternalAuthStrategy,
+    previous_credentials: &serde_json::Value,
+    updated_credentials: &serde_json::Value,
+) -> Result<Option<PathBuf>> {
+    let auth_file_path = resolve_auth_file_path()?;
+    let mut auth_entries = read_auth_entries(&auth_file_path)?;
+    if !update_auth_entries_if_current(
+        &mut auth_entries,
+        config,
+        strategy,
+        previous_credentials,
+        updated_credentials,
+    )? {
+        return Ok(None);
+    }
+
+    write_auth_entries(&auth_file_path, &auth_entries)?;
+    Ok(Some(auth_file_path))
+}
+
 fn build_opencode_auth_payload(
     strategy: &OpenCodeExternalAuthStrategy,
     credentials: &serde_json::Value,
@@ -93,6 +115,28 @@ fn auth_payload_matches(current: &serde_json::Value, candidate: &serde_json::Val
             current == candidate
         }
     }
+}
+
+fn update_auth_entries_if_current(
+    auth_entries: &mut serde_json::Map<String, serde_json::Value>,
+    config: &OpenCodeExternalAuth,
+    strategy: &OpenCodeExternalAuthStrategy,
+    previous_credentials: &serde_json::Value,
+    updated_credentials: &serde_json::Value,
+) -> Result<bool> {
+    let auth_key = non_empty_auth_key(config)?;
+    let Some(current) = auth_entries.get(auth_key.as_str()) else {
+        return Ok(false);
+    };
+
+    let previous = build_opencode_auth_payload(strategy, previous_credentials)?;
+    if !auth_payload_matches(current, &previous) {
+        return Ok(false);
+    }
+
+    let updated = build_opencode_auth_payload(strategy, updated_credentials)?;
+    auth_entries.insert(auth_key, updated);
+    Ok(true)
 }
 
 fn same_non_empty_string(
@@ -344,6 +388,14 @@ mod tests {
         }
     }
 
+    fn opencode_config() -> OpenCodeExternalAuth {
+        OpenCodeExternalAuth {
+            auth_key: "openai".to_string(),
+            strategies: HashMap::new(),
+            rotation: None,
+        }
+    }
+
     #[test]
     fn builds_oauth_payload_from_manifest_mapping() {
         let credentials = serde_json::json!({
@@ -427,5 +479,76 @@ mod tests {
             &serde_json::json!({ "type": "oauth", "refresh": "one" }),
             &serde_json::json!({ "type": "oauth", "refresh": "two" })
         ));
+    }
+
+    #[test]
+    fn updates_current_oauth_entry_with_refreshed_credentials() {
+        let config = opencode_config();
+        let strategy = oauth_strategy();
+        let previous = serde_json::json!({
+            "accessToken": "old-access",
+            "refreshToken": "old-refresh",
+            "expiresAt": 1770000000,
+            "accountId": "acct_123"
+        });
+        let updated = serde_json::json!({
+            "accessToken": "new-access",
+            "refreshToken": "new-refresh",
+            "expiresAt": 1770003600,
+            "accountId": "acct_123"
+        });
+        let mut entries = serde_json::Map::from_iter([(
+            "openai".to_string(),
+            serde_json::json!({
+                "type": "oauth",
+                "access": "old-access",
+                "refresh": "old-refresh",
+                "expires": 1770000000000_i64,
+                "accountId": "acct_123"
+            }),
+        )]);
+
+        let did_update =
+            update_auth_entries_if_current(&mut entries, &config, &strategy, &previous, &updated)
+                .unwrap();
+
+        assert!(did_update);
+        assert_eq!(entries["openai"]["access"], "new-access");
+        assert_eq!(entries["openai"]["refresh"], "new-refresh");
+        assert_eq!(entries["openai"]["expires"], 1770003600000_i64);
+        assert_eq!(entries["openai"]["accountId"], "acct_123");
+    }
+
+    #[test]
+    fn does_not_update_non_current_oauth_entry() {
+        let config = opencode_config();
+        let strategy = oauth_strategy();
+        let previous = serde_json::json!({
+            "accessToken": "old-access",
+            "refreshToken": "old-refresh",
+            "expiresAt": 1770000000,
+            "accountId": "acct_123"
+        });
+        let updated = serde_json::json!({
+            "accessToken": "new-access",
+            "refreshToken": "new-refresh",
+            "expiresAt": 1770003600,
+            "accountId": "acct_123"
+        });
+        let original = serde_json::json!({
+            "type": "oauth",
+            "access": "other-access",
+            "refresh": "other-refresh",
+            "expires": 1770000000000_i64,
+            "accountId": "acct_other"
+        });
+        let mut entries = serde_json::Map::from_iter([("openai".to_string(), original.clone())]);
+
+        let did_update =
+            update_auth_entries_if_current(&mut entries, &config, &strategy, &previous, &updated)
+                .unwrap();
+
+        assert!(!did_update);
+        assert_eq!(entries["openai"], original);
     }
 }

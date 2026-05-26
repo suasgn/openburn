@@ -164,6 +164,33 @@ pub fn list_opencode_auth_account_matches<R: Runtime>(
     Ok(matches)
 }
 
+pub fn update_opencode_auth_if_current(
+    plugin: &LoadedPlugin,
+    account: &AccountRecord,
+    previous_credentials: &serde_json::Value,
+    updated_credentials: &serde_json::Value,
+) -> Result<bool> {
+    let Some(config) = plugin
+        .manifest
+        .external_auth
+        .as_ref()
+        .and_then(|external| external.opencode.as_ref())
+    else {
+        return Ok(false);
+    };
+    let Ok(strategy) = opencode_strategy_for_account(plugin, config, account) else {
+        return Ok(false);
+    };
+
+    Ok(opencode_auth_file::update_auth_if_current(
+        config,
+        strategy,
+        previous_credentials,
+        updated_credentials,
+    )?
+    .is_some())
+}
+
 fn sync_account_with_plugin<R: Runtime>(
     app: &tauri::AppHandle<R>,
     store: &AccountStore,

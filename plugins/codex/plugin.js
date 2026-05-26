@@ -2,7 +2,10 @@
   const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
   const REFRESH_URL = "https://auth.openai.com/oauth/token"
   const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
-  const REFRESH_AGE_MS = 8 * 24 * 60 * 60 * 1000
+  const DAY_MS = 24 * 60 * 60 * 1000
+  const REFRESH_AGE_MS = 7 * DAY_MS
+  const SHORT_EXPIRY_REFRESH_BUFFER_MS = 5 * 60 * 1000
+  const LONG_EXPIRY_REFRESH_BUFFER_MS = DAY_MS
 
   function extractAccountIdFromClaims(claims) {
     if (!claims || typeof claims !== "object") return null
@@ -59,7 +62,14 @@
   function needsRefresh(ctx, auth, nowMs) {
     if (auth.tokens && auth.tokens.expires_at) {
       const expiresAt = Number(auth.tokens.expires_at) * 1000
-      if (Number.isFinite(expiresAt) && nowMs + 5 * 60 * 1000 >= expiresAt) return true
+      if (Number.isFinite(expiresAt)) {
+        const lastMs = auth.last_refresh ? ctx.util.parseDateMs(auth.last_refresh) : null
+        const lifetimeMs = lastMs === null ? null : expiresAt - lastMs
+        const bufferMs = lifetimeMs !== null && lifetimeMs > DAY_MS
+          ? LONG_EXPIRY_REFRESH_BUFFER_MS
+          : SHORT_EXPIRY_REFRESH_BUFFER_MS
+        if (nowMs + bufferMs >= expiresAt) return true
+      }
     }
     if (!auth.last_refresh) return true
     const lastMs = ctx.util.parseDateMs(auth.last_refresh)
@@ -79,11 +89,12 @@
       const resp = ctx.util.request({
         method: "POST",
         url: REFRESH_URL,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        bodyText:
-          "grant_type=refresh_token" +
-          "&client_id=" + encodeURIComponent(CLIENT_ID) +
-          "&refresh_token=" + encodeURIComponent(auth.tokens.refresh_token),
+        headers: { "Content-Type": "application/json" },
+        bodyText: JSON.stringify({
+          grant_type: "refresh_token",
+          client_id: CLIENT_ID,
+          refresh_token: auth.tokens.refresh_token,
+        }),
         timeoutMs: 15000,
       })
 
@@ -326,7 +337,7 @@
       let accountId = auth.tokens.account_id
 
       if (needsRefresh(ctx, auth, nowMs)) {
-        ctx.host.log.info("token needs refresh (age > " + (REFRESH_AGE_MS / 1000 / 60 / 60 / 24) + " days)")
+        ctx.host.log.info("token needs refresh")
         const refreshed = refreshToken(ctx, authState)
         if (refreshed) {
           accessToken = refreshed

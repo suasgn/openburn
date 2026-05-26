@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCtx as makeBaseCtx } from "../test-helpers.js"
+import manifest from "./plugin.json"
 
 const loadPlugin = async () => {
   await import("./plugin.js")
@@ -49,6 +50,17 @@ describe("codex plugin", () => {
     const ctx = makeCtx()
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
+  })
+
+  it("matches Codex CLI OAuth scopes", () => {
+    expect(manifest.auth.strategies[0].oauth.scopes).toEqual([
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "api.connectors.read",
+      "api.connectors.invoke",
+    ])
   })
 
   it("uses account OAuth credentials", async () => {
@@ -128,6 +140,119 @@ describe("codex plugin", () => {
     const credits = result.lines.find((line) => line.label === "Credits")
     expect(credits).toBeTruthy()
     expect(credits.used).toBe(900)
+  })
+
+  it("refreshes with Codex CLI JSON token request", async () => {
+    const ctx = makeCtx()
+    setAccountCredentials(ctx, {
+      tokens: { access_token: "old", refresh_token: "refresh", account_id: "acc" },
+      last_refresh: "2000-01-01T00:00:00.000Z",
+    })
+    const refreshBodies = []
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (String(opts.url).includes("oauth/token")) {
+        expect(opts.headers["Content-Type"]).toBe("application/json")
+        refreshBodies.push(ctx.util.tryParseJson(opts.bodyText))
+        return {
+          status: 200,
+          headers: {},
+          bodyText: JSON.stringify({
+            access_token: "new",
+            refresh_token: "new-refresh",
+            expires_in: 3600,
+          }),
+        }
+      }
+
+      expect(opts.headers.Authorization).toBe("Bearer new")
+      return {
+        status: 200,
+        headers: { "x-codex-primary-used-percent": "1" },
+        bodyText: JSON.stringify({}),
+      }
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+
+    expect(refreshBodies).toEqual([{
+      grant_type: "refresh_token",
+      client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+      refresh_token: "refresh",
+    }])
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe("new")
+    expect(updated.refreshToken).toBe("new-refresh")
+  })
+
+  it("refreshes one day before a long-lived expiresAt", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-08T00:00:00.000Z"))
+    try {
+      const ctx = makeCtx()
+      const expiresAt = Math.floor((Date.now() + 23 * 60 * 60 * 1000) / 1000)
+      setAccountCredentials(ctx, {
+        tokens: {
+          access_token: "old",
+          refresh_token: "refresh",
+          account_id: "acc",
+          expires_at: expiresAt,
+        },
+        last_refresh: "2026-01-01T01:00:00.000Z",
+      })
+      let refreshCalls = 0
+      ctx.host.http.request.mockImplementation((opts) => {
+        if (String(opts.url).includes("oauth/token")) {
+          refreshCalls += 1
+          return { status: 200, headers: {}, bodyText: JSON.stringify({ access_token: "new" }) }
+        }
+
+        expect(opts.headers.Authorization).toBe("Bearer new")
+        return {
+          status: 200,
+          headers: { "x-codex-primary-used-percent": "1" },
+          bodyText: JSON.stringify({}),
+        }
+      })
+
+      const plugin = await loadPlugin()
+      plugin.probe(ctx)
+      expect(refreshCalls).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not refresh short-lived expiresAt one day early", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-08T00:00:00.000Z"))
+    try {
+      const ctx = makeCtx()
+      const expiresAt = Math.floor((Date.now() + 60 * 60 * 1000) / 1000)
+      setAccountCredentials(ctx, {
+        tokens: {
+          access_token: "existing",
+          refresh_token: "refresh",
+          account_id: "acc",
+          expires_at: expiresAt,
+        },
+        last_refresh: new Date().toISOString(),
+      })
+      ctx.host.http.request.mockImplementation((opts) => {
+        expect(String(opts.url)).not.toContain("oauth/token")
+        expect(opts.headers.Authorization).toBe("Bearer existing")
+        return {
+          status: 200,
+          headers: { "x-codex-primary-used-percent": "1" },
+          bodyText: JSON.stringify({}),
+        }
+      })
+
+      const plugin = await loadPlugin()
+      plugin.probe(ctx)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("maps prolite plan to Pro 5x", async () => {

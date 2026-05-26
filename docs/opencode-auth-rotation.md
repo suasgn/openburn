@@ -14,6 +14,8 @@ In OpenBurn settings:
 
 This writes the selected account to `~/.local/share/opencode/auth.json`.
 
+When OpenBurn refreshes OAuth credentials for the currently synced account, it also updates OpenCode's `auth.json` so rotated refresh tokens stay in sync.
+
 ## Local API
 
 ```bash

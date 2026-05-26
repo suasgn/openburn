@@ -379,6 +379,7 @@ fn run_plugin_probe_with_accounts(
             label: account.label.clone(),
             settings: account.settings.clone(),
         };
+        let previous_credentials = credentials.clone();
         let output = plugin_engine::runtime::run_probe(
             plugin,
             app_data_dir,
@@ -402,12 +403,28 @@ fn run_plugin_probe_with_accounts(
             let _ = store.record_probe_error(&account.id, &message);
         } else {
             if let Some(updated_credentials) = output.updated_credentials.as_ref() {
-                let _ = secrets::set_account_credentials(
+                match secrets::set_account_credentials(
                     app_handle,
                     store.inner(),
                     &account.id,
                     updated_credentials,
-                );
+                ) {
+                    Ok(()) => {
+                        if let Err(err) = external_auth::update_opencode_auth_if_current(
+                            plugin,
+                            &account,
+                            &previous_credentials,
+                            updated_credentials,
+                        ) {
+                            log::warn!(
+                                "failed to update OpenCode auth after credential refresh: {err}"
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!("failed to save refreshed account credentials: {err}");
+                    }
+                }
             }
             let _ = store.record_probe_success(&account.id);
         }
