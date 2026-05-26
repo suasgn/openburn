@@ -483,6 +483,33 @@ describe("perplexity plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("Unable to connect")
   })
 
+  it("uses user and rate limits when the groups payload has no readable id", async () => {
+    const ctx = makeCtx()
+    const token = makeJwtLikeToken()
+    mockCacheSession(ctx, { requestHex: makeRequestHexWithBearer(token) })
+
+    ctx.host.http.request.mockImplementation((req) => {
+      if (req.url === "https://www.perplexity.ai/api/user") {
+        return { status: 200, headers: {}, bodyText: JSON.stringify({ subscription_tier: "pro" }) }
+      }
+      if (req.url === "https://www.perplexity.ai/rest/pplx-api/v2/groups") {
+        return { status: 200, headers: {}, bodyText: JSON.stringify({ orgs: [{ name: "missing-id" }] }) }
+      }
+      if (req.url === "https://www.perplexity.ai/rest/rate-limit/all") {
+        return { status: 200, headers: {}, bodyText: JSON.stringify({ remaining_pro: 3 }) }
+      }
+      return { status: 404, headers: {}, bodyText: "{}" }
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+
+    expect(result.plan).toBe("Pro")
+    expect(result.lines).toEqual([
+      expect.objectContaining({ label: "Queries", value: "3 remaining" }),
+    ])
+  })
+
   it("treats empty cache query rows as not logged in", async () => {
     const ctx = makeCtx()
     const originalExists = ctx.host.fs.exists

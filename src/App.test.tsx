@@ -21,6 +21,8 @@ const state = vi.hoisted(() => ({
   saveDisplayModeMock: vi.fn(),
   loadResetTimerDisplayModeMock: vi.fn(),
   saveResetTimerDisplayModeMock: vi.fn(),
+  loadTimeFormatModeMock: vi.fn(),
+  saveTimeFormatModeMock: vi.fn(),
   loadMenubarIconStyleMock: vi.fn(),
   saveMenubarIconStyleMock: vi.fn(),
   migrateLegacyTraySettingsMock: vi.fn(),
@@ -234,6 +236,8 @@ vi.mock("@/lib/settings", async () => {
     saveDisplayMode: state.saveDisplayModeMock,
     loadResetTimerDisplayMode: state.loadResetTimerDisplayModeMock,
     saveResetTimerDisplayMode: state.saveResetTimerDisplayModeMock,
+    loadTimeFormatMode: state.loadTimeFormatModeMock,
+    saveTimeFormatMode: state.saveTimeFormatModeMock,
     loadMenubarIconStyle: state.loadMenubarIconStyleMock,
     saveMenubarIconStyle: state.saveMenubarIconStyleMock,
     migrateLegacyTraySettings: state.migrateLegacyTraySettingsMock,
@@ -274,6 +278,8 @@ describe("App", () => {
     state.saveDisplayModeMock.mockReset()
     state.loadResetTimerDisplayModeMock.mockReset()
     state.saveResetTimerDisplayModeMock.mockReset()
+    state.loadTimeFormatModeMock.mockReset()
+    state.saveTimeFormatModeMock.mockReset()
     state.loadMenubarIconStyleMock.mockReset()
     state.saveMenubarIconStyleMock.mockReset()
     state.migrateLegacyTraySettingsMock.mockReset()
@@ -313,6 +319,8 @@ describe("App", () => {
     state.saveDisplayModeMock.mockResolvedValue(undefined)
     state.loadResetTimerDisplayModeMock.mockResolvedValue("relative")
     state.saveResetTimerDisplayModeMock.mockResolvedValue(undefined)
+    state.loadTimeFormatModeMock.mockResolvedValue("auto")
+    state.saveTimeFormatModeMock.mockResolvedValue(undefined)
     state.loadMenubarIconStyleMock.mockResolvedValue("provider")
     state.saveMenubarIconStyleMock.mockResolvedValue(undefined)
     state.migrateLegacyTraySettingsMock.mockResolvedValue(undefined)
@@ -739,6 +747,15 @@ describe("App", () => {
     expect(state.saveDisplayModeMock).toHaveBeenCalledWith("used")
   })
 
+  it("updates time format mode in settings", async () => {
+    render(<App />)
+    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
+    await userEvent.click(settingsButtons[0])
+
+    await userEvent.click(await screen.findByRole("radio", { name: /24-hour/ }))
+    expect(state.saveTimeFormatModeMock).toHaveBeenCalledWith("24h")
+  })
+
   it("settings UI persists menubar icon style change", async () => {
     render(<App />)
     const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
@@ -783,6 +800,22 @@ describe("App", () => {
 
     await userEvent.click(await screen.findByRole("radio", { name: "Used" }))
     await waitFor(() => expect(errorSpy).toHaveBeenCalled())
+
+    errorSpy.mockRestore()
+  })
+
+  it("logs when saving time format mode fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    state.saveTimeFormatModeMock.mockRejectedValueOnce(new Error("save time format mode"))
+
+    render(<App />)
+    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
+    await userEvent.click(settingsButtons[0])
+
+    await userEvent.click(await screen.findByRole("radio", { name: /12-hour/ }))
+    await waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith("Failed to save time format mode:", expect.any(Error))
+    )
 
     errorSpy.mockRestore()
   })
@@ -922,6 +955,19 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.invokeMock).toHaveBeenCalledWith("list_plugins"))
     await waitFor(() => expect(errorSpy).toHaveBeenCalled())
+
+    errorSpy.mockRestore()
+  })
+
+  it("logs when loading time format mode fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    state.loadTimeFormatModeMock.mockRejectedValueOnce(new Error("load time format mode"))
+
+    render(<App />)
+    await waitFor(() => expect(state.invokeMock).toHaveBeenCalledWith("list_plugins"))
+    await waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith("Failed to load time format mode:", expect.any(Error))
+    )
 
     errorSpy.mockRestore()
   })
@@ -1355,54 +1401,70 @@ describe("App", () => {
 
   it("fires auto-update interval and schedules next", async () => {
     vi.useFakeTimers()
-    // Set a very short interval for testing (5 min = 300000ms)
-    state.loadAutoUpdateIntervalMock.mockResolvedValueOnce(5)
-    state.loadPluginSettingsMock.mockResolvedValueOnce({ order: ["a"], disabled: [] })
+    try {
+      // Set a very short interval for testing (5 min = 300000ms)
+      state.loadAutoUpdateIntervalMock.mockResolvedValueOnce(5)
+      state.loadPluginSettingsMock.mockResolvedValueOnce({ order: ["a"], disabled: [] })
 
-    render(<App />)
+      render(<App />)
 
-    // Wait for initial setup
-    await vi.waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
+      // Wait for initial setup, then mark the provider idle so auto-update can refresh it.
+      await vi.waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
+      state.probeHandlers?.onResult({
+        providerId: "a",
+        displayName: "Alpha",
+        iconUrl: "icon-a",
+        lines: [{ type: "text", label: "Now", value: "OK" }],
+      })
 
-    // Clear the initial batch call count
-    const initialCalls = state.startBatchMock.mock.calls.length
+      // Clear the initial batch call count
+      const initialCalls = state.startBatchMock.mock.calls.length
 
-    // Advance time by 5 minutes to trigger the interval
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+      // Advance time by 5 minutes to trigger the interval
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
 
-    // The interval should have fired, calling startBatch again
-    await vi.waitFor(() =>
-      expect(state.startBatchMock.mock.calls.length).toBeGreaterThan(initialCalls)
-    )
-
-    vi.useRealTimers()
+      // The interval should have fired, calling startBatch again
+      await vi.waitFor(() =>
+        expect(state.startBatchMock.mock.calls.length).toBeGreaterThan(initialCalls)
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("logs error when auto-update batch fails", async () => {
     vi.useFakeTimers()
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
 
-    state.loadAutoUpdateIntervalMock.mockResolvedValueOnce(5)
-    state.loadPluginSettingsMock.mockResolvedValueOnce({ order: ["a"], disabled: [] })
-    // First call succeeds (initial batch), subsequent calls fail
-    state.startBatchMock
-      .mockResolvedValueOnce(["a"])
-      .mockRejectedValue(new Error("auto-update failed"))
+      state.loadAutoUpdateIntervalMock.mockResolvedValueOnce(5)
+      state.loadPluginSettingsMock.mockResolvedValueOnce({ order: ["a"], disabled: [] })
+      // First call succeeds (initial batch), subsequent calls fail
+      state.startBatchMock
+        .mockResolvedValueOnce(["a"])
+        .mockRejectedValue(new Error("auto-update failed"))
 
-    render(<App />)
+      render(<App />)
 
-    // Wait for initial batch
-    await vi.waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
+      // Wait for initial batch, then mark the provider idle so auto-update can refresh it.
+      await vi.waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
+      state.probeHandlers?.onResult({
+        providerId: "a",
+        displayName: "Alpha",
+        iconUrl: "icon-a",
+        lines: [{ type: "text", label: "Now", value: "OK" }],
+      })
 
-    // Advance time to trigger the interval (which will fail)
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+      // Advance time to trigger the interval (which will fail)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
 
-    await vi.waitFor(() =>
-      expect(errorSpy).toHaveBeenCalledWith("Failed to start auto-update batch:", expect.any(Error))
-    )
-
-    errorSpy.mockRestore()
-    vi.useRealTimers()
+      await vi.waitFor(() =>
+        expect(errorSpy).toHaveBeenCalledWith("Failed to start auto-update batch:", expect.any(Error))
+      )
+    } finally {
+      errorSpy.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it("logs error when loading auto-update interval fails", async () => {

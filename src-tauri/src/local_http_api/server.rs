@@ -6,12 +6,63 @@ use crate::external_auth;
 use serde::Deserialize;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::Manager;
 
 const BIND_ADDR: &str = "127.0.0.1:6736";
+const MAX_CONCURRENT_CONNECTIONS: usize = 16;
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const OPENCODE_SYNC_PATH: &str = "/v1/external-auth/opencode/sync";
 const OPENCODE_ROTATE_PATH: &str = "/v1/external-auth/opencode/rotate";
+
+struct ConnectionLimiter {
+    active: Arc<AtomicUsize>,
+    max: usize,
+}
+
+struct ConnectionPermit {
+    active: Arc<AtomicUsize>,
+}
+
+impl ConnectionLimiter {
+    fn new(max: usize) -> Self {
+        Self {
+            active: Arc::new(AtomicUsize::new(0)),
+            max,
+        }
+    }
+
+    fn acquire(&self) -> Option<ConnectionPermit> {
+        loop {
+            let active = self.active.load(Ordering::Acquire);
+            if active >= self.max {
+                return None;
+            }
+            if self
+                .active
+                .compare_exchange(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return Some(ConnectionPermit {
+                    active: Arc::clone(&self.active),
+                });
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn active_count(&self) -> usize {
+        self.active.load(Ordering::Acquire)
+    }
+}
+
+impl Drop for ConnectionPermit {
+    fn drop(&mut self) {
+        self.active.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP server
@@ -34,11 +85,23 @@ pub fn start_server(app: tauri::AppHandle) {
             }
         };
 
+        let limiter = ConnectionLimiter::new(MAX_CONCURRENT_CONNECTIONS);
         for stream in listener.incoming() {
             match stream {
-                Ok(stream) => {
+                Ok(mut stream) => {
+                    let Some(permit) = limiter.acquire() else {
+                        log::warn!(
+                            "local HTTP API connection limit reached (max={})",
+                            MAX_CONCURRENT_CONNECTIONS
+                        );
+                        let _ = stream.set_write_timeout(Some(CONNECTION_TIMEOUT));
+                        let _ = stream
+                            .write_all(response_service_unavailable("server_busy").as_bytes());
+                        let _ = stream.flush();
+                        continue;
+                    };
                     let app = app.clone();
-                    std::thread::spawn(move || handle_connection(stream, app));
+                    std::thread::spawn(move || handle_connection(stream, app, permit));
                 }
                 Err(e) => log::debug!("local HTTP API accept error: {}", e),
             }
@@ -46,8 +109,9 @@ pub fn start_server(app: tauri::AppHandle) {
     });
 }
 
-fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle, _permit: ConnectionPermit) {
+    let _ = stream.set_read_timeout(Some(CONNECTION_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(CONNECTION_TIMEOUT));
 
     // Read request (up to 4 KB is plenty for a request line + headers)
     let mut buf = [0u8; 4096];
@@ -444,5 +508,16 @@ mod tests {
         let resp = response_json(200, "OK", "[]");
         assert!(resp.contains("Access-Control-Allow-Origin: *"));
         assert!(resp.contains("Content-Type: application/json; charset=utf-8"));
+    }
+
+    #[test]
+    fn connection_limiter_caps_active_permits() {
+        let limiter = ConnectionLimiter::new(1);
+        let permit = limiter.acquire().expect("first permit");
+        assert_eq!(limiter.active_count(), 1);
+        assert!(limiter.acquire().is_none());
+        drop(permit);
+        assert_eq!(limiter.active_count(), 0);
+        assert!(limiter.acquire().is_some());
     }
 }

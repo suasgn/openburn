@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PluginError } from "@/components/plugin-error"
 import { groupLinesByType } from "@/lib/group-lines-by-type"
 import type { MetricLine } from "@/lib/plugin-types"
-import type { DisplayMode, ResetTimerDisplayMode } from "@/lib/settings"
+import type { DisplayMode, ResetTimerDisplayMode, TimeFormatMode } from "@/lib/settings"
 import { calculateDeficit, calculatePaceStatus, type PaceStatus } from "@/lib/pace-status"
 import { buildPaceDetailText, formatDeficitText, formatRunsOutText, getPaceStatusText } from "@/lib/pace-tooltip"
 import { formatResetAbsoluteLabel, formatResetRelativeLabel, formatResetTooltipText } from "@/lib/reset-tooltip"
@@ -62,6 +62,7 @@ export function MetricLineGroups({
   lines,
   displayMode,
   resetTimerDisplayMode,
+  timeFormatMode,
   onResetTimerDisplayModeToggle,
   now,
   refreshing,
@@ -69,6 +70,7 @@ export function MetricLineGroups({
   lines: MetricLine[]
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
+  timeFormatMode?: TimeFormatMode
   onResetTimerDisplayModeToggle?: () => void
   now: number
   refreshing?: boolean
@@ -87,6 +89,7 @@ export function MetricLineGroups({
                   line={line}
                   displayMode={displayMode}
                   resetTimerDisplayMode={resetTimerDisplayMode}
+                  timeFormatMode={timeFormatMode}
                   onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
                   now={now}
                   refreshing={refreshing}
@@ -105,6 +108,7 @@ export function MetricLineGroups({
                   line={line}
                   displayMode={displayMode}
                   resetTimerDisplayMode={resetTimerDisplayMode}
+                  timeFormatMode={timeFormatMode}
                   onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
                   now={now}
                   refreshing={refreshing}
@@ -122,6 +126,7 @@ function MetricLineRenderer({
   line,
   displayMode,
   resetTimerDisplayMode,
+  timeFormatMode = "auto",
   onResetTimerDisplayModeToggle,
   now,
   refreshing,
@@ -129,6 +134,7 @@ function MetricLineRenderer({
   line: MetricLine
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
+  timeFormatMode?: TimeFormatMode
   onResetTimerDisplayModeToggle?: () => void
   now: number
   refreshing?: boolean
@@ -196,7 +202,7 @@ function MetricLineRenderer({
 
     const resetLabel = line.resetsAt
       ? resetTimerDisplayMode === "absolute"
-        ? formatResetAbsoluteLabel(now, line.resetsAt)
+        ? formatResetAbsoluteLabel(now, line.resetsAt, timeFormatMode)
         : formatResetRelativeLabel(now, line.resetsAt)
       : null
     const resetTooltipText = line.resetsAt
@@ -204,6 +210,7 @@ function MetricLineRenderer({
           nowMs: now,
           resetsAtIso: line.resetsAt,
           visibleMode: resetTimerDisplayMode,
+          timeFormatMode,
         })
       : null
 

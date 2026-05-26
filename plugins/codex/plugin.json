@@ -53,7 +53,7 @@
   "links": [
     { "label": "Docs", "url": "https://developers.openai.com/codex/" },
     { "label": "Status", "url": "https://status.openai.com/" },
-    { "label": "Usage dashboard", "url": "https://platform.openai.com/usage" }
+    { "label": "Usage dashboard", "url": "https://chatgpt.com/codex/settings/usage" }
   ],
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 },

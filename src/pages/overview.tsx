@@ -1,6 +1,6 @@
 import { ProviderCard } from "@/components/provider-card"
 import type { PluginDisplayState } from "@/lib/plugin-types"
-import type { AccountOrderByPlugin, DisplayMode, ResetTimerDisplayMode } from "@/lib/settings"
+import type { AccountOrderByPlugin, DisplayMode, ResetTimerDisplayMode, TimeFormatMode } from "@/lib/settings"
 
 interface OverviewPageProps {
   plugins: PluginDisplayState[]
@@ -9,6 +9,7 @@ interface OverviewPageProps {
   onRetryPlugin?: (pluginId: string) => void
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
+  timeFormatMode?: TimeFormatMode
   onResetTimerDisplayModeToggle?: () => void
 }
 
@@ -19,6 +20,7 @@ export function OverviewPage({
   onRetryPlugin,
   displayMode,
   resetTimerDisplayMode,
+  timeFormatMode = "auto",
   onResetTimerDisplayModeToggle,
 }: OverviewPageProps) {
   if (plugins.length === 0) {
@@ -49,6 +51,7 @@ export function OverviewPage({
           scopeFilter="overview"
           displayMode={displayMode}
           resetTimerDisplayMode={resetTimerDisplayMode}
+          timeFormatMode={timeFormatMode}
           onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
         />
       ))}

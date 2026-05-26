@@ -92,4 +92,16 @@ describe("reset-tooltip", () => {
       })
     ).toBe("Resets in 1h 5m")
   })
+
+  it("formats absolute reset labels with forced 24-hour mode", () => {
+    const nowMs = new Date(2026, 1, 3, 0, 0, 0).getTime()
+    const resetsAtIso = new Date(2026, 1, 3, 23, 4, 0).toISOString()
+    const timeText = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: false,
+    }).format(Date.parse(resetsAtIso))
+
+    expect(formatResetAbsoluteLabel(nowMs, resetsAtIso, "24h")).toBe(`Resets today at ${timeText}`)
+  })
 })

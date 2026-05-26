@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const { getEnabledPluginIdsMock } = vi.hoisted(() => ({
   getEnabledPluginIdsMock: vi.fn(),
@@ -17,6 +17,10 @@ describe("useProbeAutoUpdate", () => {
     getEnabledPluginIdsMock.mockImplementation((settings: { order: string[] }) => settings.order)
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it("keeps auto-update cleared when plugin settings are missing", () => {
     const { result } = renderHook(() =>
       useProbeAutoUpdate({
@@ -24,6 +28,7 @@ describe("useProbeAutoUpdate", () => {
         autoUpdateInterval: 15,
         setLoadingForPlugins: vi.fn(),
         setErrorForPlugins: vi.fn(),
+        isPluginLoading: vi.fn(),
         startBatch: vi.fn(),
       })
     )
@@ -44,6 +49,7 @@ describe("useProbeAutoUpdate", () => {
         autoUpdateInterval: 15,
         setLoadingForPlugins: vi.fn(),
         setErrorForPlugins: vi.fn(),
+        isPluginLoading: vi.fn(),
         startBatch: vi.fn(),
       })
     )
@@ -54,5 +60,30 @@ describe("useProbeAutoUpdate", () => {
 
     expect(result.current.autoUpdateNextAt).toBe(910_000)
     nowSpy.mockRestore()
+  })
+
+  it("skips plugins that are already loading", () => {
+    vi.useFakeTimers()
+    const setLoadingForPlugins = vi.fn()
+    const startBatch = vi.fn().mockResolvedValue(["codex"])
+
+    renderHook(() =>
+      useProbeAutoUpdate({
+        pluginSettings: { order: ["claude", "codex"], disabled: [] },
+        autoUpdateInterval: 5,
+        setLoadingForPlugins,
+        setErrorForPlugins: vi.fn(),
+        isPluginLoading: (id: string) => id === "claude",
+        startBatch,
+      })
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(300_000)
+    })
+
+    expect(setLoadingForPlugins).toHaveBeenCalledWith(["codex"])
+    expect(startBatch).toHaveBeenCalledWith(["codex"])
+
   })
 })

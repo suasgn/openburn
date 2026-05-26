@@ -63,6 +63,12 @@ describe("codex plugin", () => {
     ])
   })
 
+  it("links to the ChatGPT Codex usage page", () => {
+    expect(manifest.links.find((link) => link.label === "Usage dashboard")?.url).toBe(
+      "https://chatgpt.com/codex/settings/usage"
+    )
+  })
+
   it("uses account OAuth credentials", async () => {
     const ctx = makeCtx()
     setAccountCredentials(ctx, { tokens: { access_token: "account-token" } })
@@ -285,6 +291,32 @@ describe("codex plugin", () => {
     const credits = result.lines.find((line) => line.label === "Credits")
     expect(credits).toBeTruthy()
     expect(credits.used).toBe(900)
+  })
+
+  it("uses zero credits from the response body when the account has no credits", async () => {
+    const ctx = makeCtx()
+    setAccountCredentials(ctx, { tokens: { access_token: "token" } })
+    ctx.host.http.request.mockReturnValue({
+      status: 200,
+      headers: {
+        "x-codex-primary-used-percent": "25",
+        "x-codex-credits-balance": "1000",
+      },
+      bodyText: JSON.stringify({
+        credits: {
+          has_credits: false,
+          balance: null,
+        },
+      }),
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+
+    const credits = result.lines.find((line) => line.label === "Credits")
+    expect(credits).toBeTruthy()
+    expect(credits.used).toBe(1000)
+    expect(credits.limit).toBe(1000)
   })
 
   it("returns updated account credentials after refresh", async () => {

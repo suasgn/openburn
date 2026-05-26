@@ -17,6 +17,7 @@ const {
   loadResetTimerDisplayModeMock,
   loadStartOnLoginMock,
   loadThemeModeMock,
+  loadTimeFormatModeMock,
   migrateLegacyTraySettingsMock,
   normalizePluginSettingsMock,
   savePluginSettingsMock,
@@ -36,6 +37,7 @@ const {
   loadResetTimerDisplayModeMock: vi.fn(),
   loadStartOnLoginMock: vi.fn(),
   loadThemeModeMock: vi.fn(),
+  loadTimeFormatModeMock: vi.fn(),
   migrateLegacyTraySettingsMock: vi.fn(),
   normalizePluginSettingsMock: vi.fn(),
   savePluginSettingsMock: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock("@/lib/settings", () => ({
   DEFAULT_RESET_TIMER_DISPLAY_MODE: "relative",
   DEFAULT_START_ON_LOGIN: false,
   DEFAULT_THEME_MODE: "system",
+  DEFAULT_TIME_FORMAT_MODE: "auto",
   getEnabledPluginIds: getEnabledPluginIdsMock,
   loadAutoUpdateInterval: loadAutoUpdateIntervalMock,
   loadDisplayMode: loadDisplayModeMock,
@@ -70,6 +73,7 @@ vi.mock("@/lib/settings", () => ({
   loadResetTimerDisplayMode: loadResetTimerDisplayModeMock,
   loadStartOnLogin: loadStartOnLoginMock,
   loadThemeMode: loadThemeModeMock,
+  loadTimeFormatMode: loadTimeFormatModeMock,
   migrateLegacyTraySettings: migrateLegacyTraySettingsMock,
   normalizePluginSettings: normalizePluginSettingsMock,
   savePluginSettings: savePluginSettingsMock,
@@ -85,6 +89,7 @@ function createArgs() {
     setThemeMode: vi.fn(),
     setDisplayMode: vi.fn(),
     setResetTimerDisplayMode: vi.fn(),
+    setTimeFormatMode: vi.fn(),
     setGlobalShortcut: vi.fn(),
     setStartOnLogin: vi.fn(),
     setMenubarIconStyle: vi.fn(),
@@ -111,6 +116,7 @@ describe("useSettingsBootstrap", () => {
     loadResetTimerDisplayModeMock.mockReset()
     loadStartOnLoginMock.mockReset()
     loadThemeModeMock.mockReset()
+    loadTimeFormatModeMock.mockReset()
     migrateLegacyTraySettingsMock.mockReset()
     normalizePluginSettingsMock.mockReset()
     savePluginSettingsMock.mockReset()
@@ -134,6 +140,7 @@ describe("useSettingsBootstrap", () => {
     loadThemeModeMock.mockResolvedValue("dark")
     loadDisplayModeMock.mockResolvedValue("used")
     loadResetTimerDisplayModeMock.mockResolvedValue("relative")
+    loadTimeFormatModeMock.mockResolvedValue("auto")
     loadGlobalShortcutMock.mockResolvedValue("CommandOrControl+Shift+O")
     loadMenubarIconStyleMock.mockResolvedValue("provider")
     loadStartOnLoginMock.mockResolvedValue(true)
@@ -166,6 +173,25 @@ describe("useSettingsBootstrap", () => {
         resetModeError
       )
       expect(args.setResetTimerDisplayMode).toHaveBeenCalledWith("relative")
+    })
+
+    errorSpy.mockRestore()
+  })
+
+  it("falls back to default time format mode when loading fails", async () => {
+    const timeFormatError = new Error("time format unavailable")
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    loadTimeFormatModeMock.mockRejectedValueOnce(timeFormatError)
+    const args = createArgs()
+
+    renderHook(() => useSettingsBootstrap(args))
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Failed to load time format mode:",
+        timeFormatError
+      )
+      expect(args.setTimeFormatMode).toHaveBeenCalledWith("auto")
     })
 
     errorSpy.mockRestore()

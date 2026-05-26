@@ -9,7 +9,7 @@ import { SkeletonLines } from "@/components/skeleton-lines"
 import { PluginError } from "@/components/plugin-error"
 import { MetricLineGroups, isErrorBadge } from "@/components/provider-card-lines"
 import { useNowTicker } from "@/hooks/use-now-ticker"
-import { REFRESH_COOLDOWN_MS, type DisplayMode, type ResetTimerDisplayMode } from "@/lib/settings"
+import { REFRESH_COOLDOWN_MS, type DisplayMode, type ResetTimerDisplayMode, type TimeFormatMode } from "@/lib/settings"
 import type { ManifestLine, MetricLine, PluginLink } from "@/lib/plugin-types"
 import { getBaseMetricLabel, splitAccountScopedLabel } from "@/lib/account-scoped-label"
 
@@ -30,6 +30,7 @@ interface ProviderCardProps {
   scopeFilter?: "overview" | "all"
   displayMode: DisplayMode
   resetTimerDisplayMode?: ResetTimerDisplayMode
+  timeFormatMode?: TimeFormatMode
   onResetTimerDisplayModeToggle?: () => void
 }
 
@@ -91,6 +92,7 @@ export function ProviderCard({
   scopeFilter = "all",
   displayMode,
   resetTimerDisplayMode = "relative",
+  timeFormatMode = "auto",
   onResetTimerDisplayModeToggle,
 }: ProviderCardProps) {
   const cooldownRemainingMs = useMemo(() => {
@@ -340,6 +342,7 @@ export function ProviderCard({
               lines={groupedLines.ungrouped}
               displayMode={displayMode}
               resetTimerDisplayMode={resetTimerDisplayMode}
+              timeFormatMode={timeFormatMode}
               onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
               now={now}
               refreshing={isRefreshingWithData}
@@ -409,6 +412,7 @@ export function ProviderCard({
                           lines={contentLines}
                           displayMode={displayMode}
                           resetTimerDisplayMode={resetTimerDisplayMode}
+                          timeFormatMode={timeFormatMode}
                           onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
                           now={now}
                           refreshing={isRefreshingWithData}
