@@ -226,7 +226,7 @@ export function SideNav({
       </NavButton>
 
       {/* Plugin icons */}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain py-1 scrollbar-none">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

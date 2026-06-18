@@ -272,7 +272,7 @@ pub fn position_panel_at_tray_icon(
     let icon_center_x = icon_logical_x + (icon_logical_w / 2.0);
     let panel_x = icon_center_x - (panel_width / 2.0);
     let nudge_up: f64 = 6.0;
-    let panel_y = icon_logical_y + icon_logical_h - nudge_up;
+    let panel_y = (icon_logical_y + icon_logical_h - nudge_up).max(mon_logical_y);
 
     set_panel_top_left_immediately(&window, app_handle, panel_x, panel_y, primary_logical_h);
 }
