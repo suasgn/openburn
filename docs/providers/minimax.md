@@ -1,13 +1,13 @@
 # MiniMax
 
-> Uses MiniMax Coding Plan remains API with a user-provided API key.
+> Uses MiniMax Token Plan remains API with a user-provided API key.
 
 ## Overview
 
 - **Protocol:** HTTPS (JSON)
-- **Endpoint:** `GET https://api.minimax.io/v1/api/openplatform/coding_plan/remains`
+- **Endpoint:** `GET https://www.minimax.io/v1/token_plan/remains`
 - **Auth:** `Authorization: Bearer <api_key>`
-- **Window model:** dynamic rolling 5-hour limit (per MiniMax Coding Plan docs)
+- **Window model:** Token Plan remaining usage, returned as counts or percent
 
 ## Authentication
 
@@ -30,22 +30,16 @@ If no key is found after attempting both regions, it throws:
 Request:
 
 ```http
-GET /v1/api/openplatform/coding_plan/remains HTTP/1.1
-Host: api.minimax.io
+GET /v1/token_plan/remains HTTP/1.1
+Host: www.minimax.io
 Authorization: Bearer <api_key>
 Content-Type: application/json
 Accept: application/json
 ```
 
-Fallbacks:
-
-- `https://api.minimax.io/v1/coding_plan/remains`
-- `https://www.minimax.io/v1/api/openplatform/coding_plan/remains` (legacy fallback; can return Cloudflare HTML)
-
 When the selected region is `CN`, requests use:
 
-- `https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains`
-- `https://api.minimaxi.com/v1/coding_plan/remains`
+- `https://api.minimaxi.com/v1/token_plan/remains`
 
 Expected payload fields:
 
@@ -53,6 +47,7 @@ Expected payload fields:
 - `model_remains[]`
 - `model_remains[].current_interval_total_count`
 - `model_remains[].current_interval_usage_count`
+- `model_remains[].current_interval_remaining_percent` (Token Plan percent mode)
 - optional remaining aliases (`current_interval_remaining_count`, `current_interval_remains_count`)
 - `model_remains[].start_time`
 - `model_remains[].end_time`
@@ -76,9 +71,9 @@ Expected payload fields:
 - **Plan**: best-effort from API payload (normalized to concise label, with ` (CN)` or ` (GLOBAL)` suffix)
 - **Session** (overview progress line):
   - `label`: `Session`
-  - `format`: count (`prompts`)
-  - `used`: computed used prompts
-  - `limit`: total prompt limit for current window
+  - `format`: count (`prompts`) or percent (Token Plan percent mode)
+  - `used`: computed used prompts or percent
+  - `limit`: total prompt limit or 100 (percent mode)
   - `resetsAt`: derived from `end_time` or `remains_time`
 
 ## Errors
