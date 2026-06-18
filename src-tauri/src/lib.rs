@@ -260,6 +260,17 @@ fn prefix_metric_line(
             color,
             subtitle,
         },
+        plugin_engine::runtime::MetricLine::BarChart {
+            label,
+            points,
+            note,
+            color,
+        } => plugin_engine::runtime::MetricLine::BarChart {
+            label: scoped_account_label(account, &label),
+            points,
+            note,
+            color,
+        },
     }
 }
 

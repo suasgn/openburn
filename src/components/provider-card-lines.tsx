@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { PluginError } from "@/components/plugin-error"
+import { UsageSparkline } from "@/components/usage-sparkline"
 import { groupLinesByType } from "@/lib/group-lines-by-type"
 import type { MetricLine } from "@/lib/plugin-types"
 import type { DisplayMode, ResetTimerDisplayMode, TimeFormatMode } from "@/lib/settings"
@@ -171,8 +172,7 @@ function MetricLineRenderer({
               line.color
                 ? { color: line.color, borderColor: line.color }
                 : undefined
-            }
-            title={line.text}
+            }            title={line.text}
           >
             {line.text}
           </Badge>
@@ -181,6 +181,12 @@ function MetricLineRenderer({
           <div className="text-xs text-muted-foreground text-right -mt-0.5">{line.subtitle}</div>
         )}
       </div>
+    )
+  }
+
+  if (line.type === "barChart") {
+    return (
+      <UsageSparkline label={line.label} points={line.points} note={line.note} color={line.color} />
     )
   }
 
