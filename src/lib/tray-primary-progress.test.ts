@@ -474,4 +474,101 @@ describe("getTrayPrimaryTotalBar", () => {
 
     expect(bar).toEqual({ id: "overview", fraction: 0.75 })
   })
+
+  it("handles Claude fallback from Session to Weekly to Extra usage spent", () => {
+    const pluginsMeta = [
+      {
+        id: "claude",
+        name: "Claude",
+        iconUrl: "",
+        primaryCandidates: ["Session", "Weekly", "Extra usage spent"],
+        lines: [],
+      },
+    ]
+
+    const runTest = (
+      lines: Array<{
+        type: "progress"
+        label: string
+        used: number
+        limit: number
+        format: { kind: "dollars" | "percent" }
+      }>
+    ) => {
+      return getTrayPrimaryBars({
+        displayMode: "used",
+        pluginsMeta,
+        pluginSettings: { order: ["claude"], disabled: [] },
+        pluginStates: {
+          claude: {
+            data: {
+              providerId: "claude",
+              displayName: "Claude",
+              iconUrl: "",
+              lines,
+            },
+            loading: false,
+            error: null,
+          },
+        },
+      })
+    }
+
+    expect(
+      runTest([
+        {
+          type: "progress",
+          label: "Extra usage spent",
+          used: 30,
+          limit: 100,
+          format: { kind: "dollars" },
+        },
+      ])
+    ).toEqual([{ id: "claude", fraction: 0.3 }])
+
+    expect(
+      runTest([
+        {
+          type: "progress",
+          label: "Weekly",
+          used: 40,
+          limit: 100,
+          format: { kind: "percent" },
+        },
+        {
+          type: "progress",
+          label: "Extra usage spent",
+          used: 30,
+          limit: 100,
+          format: { kind: "dollars" },
+        },
+      ])
+    ).toEqual([{ id: "claude", fraction: 0.4 }])
+
+    expect(
+      runTest([
+        {
+          type: "progress",
+          label: "Session",
+          used: 50,
+          limit: 100,
+          format: { kind: "percent" },
+        },
+        {
+          type: "progress",
+          label: "Weekly",
+          used: 40,
+          limit: 100,
+          format: { kind: "percent" },
+        },
+        {
+          type: "progress",
+          label: "Extra usage spent",
+          used: 30,
+          limit: 100,
+          format: { kind: "dollars" },
+        },
+      ])
+    ).toEqual([{ id: "claude", fraction: 0.5 }])
+  })
 })
