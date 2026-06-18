@@ -2,6 +2,7 @@
   const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
   const REFRESH_URL = "https://auth.openai.com/oauth/token"
   const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+  const CREDIT_USD_RATE = 0.04
   const DAY_MS = 24 * 60 * 60 * 1000
   const REFRESH_AGE_MS = 7 * DAY_MS
   const SHORT_EXPIRY_REFRESH_BUFFER_MS = 5 * 60 * 1000
@@ -509,16 +510,26 @@
         }
       }
 
+      const resetCredits =
+        data.rate_limit_reset_credits &&
+        typeof data.rate_limit_reset_credits === "object" &&
+        data.rate_limit_reset_credits.available_count != null
+          ? readNumber(data.rate_limit_reset_credits.available_count)
+          : null
+      if (resetCredits !== null && resetCredits >= 0) {
+        lines.push(ctx.line.text({
+          label: "Rate Limit Resets",
+          value: Math.floor(resetCredits) + " available",
+        }))
+      }
+
       const creditsRemaining = readCreditsRemaining(resp, data)
       if (creditsRemaining !== null) {
-        const remaining = creditsRemaining
-        const limit = 1000
-        const used = Math.max(0, Math.min(limit, limit - remaining))
-        lines.push(ctx.line.progress({
+        const remaining = Math.max(0, Math.floor(creditsRemaining))
+        const usdValue = (remaining * CREDIT_USD_RATE).toFixed(2)
+        lines.push(ctx.line.text({
           label: "Credits",
-          used: used,
-          limit: limit,
-          format: { kind: "count", suffix: "credits" },
+          value: "$" + usdValue + " · " + remaining + " credits",
         }))
       }
 

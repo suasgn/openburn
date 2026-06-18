@@ -145,7 +145,13 @@ describe("codex plugin", () => {
     expect(result.lines.find((line) => line.label === "Weekly")).toBeTruthy()
     const credits = result.lines.find((line) => line.label === "Credits")
     expect(credits).toBeTruthy()
-    expect(credits.used).toBe(900)
+    expect(credits).toEqual({
+      type: "text",
+      label: "Credits",
+      value: "$4.00 · 100 credits",
+    })
+    expect(credits).not.toHaveProperty("used")
+    expect(credits).not.toHaveProperty("limit")
   })
 
   it("refreshes with Codex CLI JSON token request", async () => {
@@ -290,7 +296,7 @@ describe("codex plugin", () => {
     expect(result.lines.find((line) => line.label === "Weekly")).toBeTruthy()
     const credits = result.lines.find((line) => line.label === "Credits")
     expect(credits).toBeTruthy()
-    expect(credits.used).toBe(900)
+    expect(credits.value).toBe("$4.00 · 100 credits")
   })
 
   it("uses zero credits from the response body when the account has no credits", async () => {
@@ -315,8 +321,28 @@ describe("codex plugin", () => {
 
     const credits = result.lines.find((line) => line.label === "Credits")
     expect(credits).toBeTruthy()
-    expect(credits.used).toBe(1000)
-    expect(credits.limit).toBe(1000)
+    expect(credits.value).toBe("$0.00 · 0 credits")
+  })
+
+  it("shows credit balances above 1000 without a fake cap", async () => {
+    const ctx = makeCtx()
+    setAccountCredentials(ctx, { tokens: { access_token: "token" } })
+    ctx.host.http.request.mockReturnValue({
+      status: 200,
+      headers: {
+        "x-codex-credits-balance": "1250",
+      },
+      bodyText: JSON.stringify({}),
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+    const credits = result.lines.find((line) => line.label === "Credits")
+    expect(credits).toEqual({
+      type: "text",
+      label: "Credits",
+      value: "$50.00 · 1250 credits",
+    })
   })
 
   it("returns updated account credentials after refresh", async () => {
@@ -714,7 +740,7 @@ describe("codex plugin", () => {
         code_review_rate_limit: {
           primary_window: { used_percent: 15, reset_after_seconds: 90 },
         },
-        credits: { balance: 500 },
+        credits: { balance: 820.6969075 },
       }),
     })
     const plugin = await loadPlugin()
@@ -723,7 +749,73 @@ describe("codex plugin", () => {
     expect(result.lines.find((line) => line.label === "Reviews")).toBeTruthy()
     const credits = result.lines.find((line) => line.label === "Credits")
     expect(credits).toBeTruthy()
-    expect(credits.used).toBe(500)
+    expect(credits.value).toBe("$32.80 · 820 credits")
+  })
+
+  it("shows available rate limit resets as the first text line", async () => {
+    const ctx = makeCtx()
+    ctx.host.fs.writeText("~/.codex/auth.json", JSON.stringify({
+      tokens: { access_token: "token" },
+      last_refresh: new Date().toISOString(),
+    }))
+    ctx.host.http.request.mockReturnValue({
+      status: 200,
+      headers: {},
+      bodyText: JSON.stringify({
+        rate_limit_reset_credits: { available_count: 1 },
+        credits: { balance: 100 },
+      }),
+    })
+    ctx.host.ccusage.query.mockReturnValue({
+      status: "ok",
+      data: { daily: [] },
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+    const resetIndex = result.lines.findIndex((line) => line.label === "Rate Limit Resets")
+    const creditsIndex = result.lines.findIndex((line) => line.label === "Credits")
+    const firstTextIndex = result.lines.findIndex((line) => line.type === "text")
+
+    expect(result.lines[resetIndex]).toEqual({
+      type: "text",
+      label: "Rate Limit Resets",
+      value: "1 available",
+    })
+    expect(resetIndex).toBeGreaterThanOrEqual(0)
+    expect(resetIndex).toBe(firstTextIndex)
+    expect(creditsIndex).toBe(resetIndex + 1)
+  })
+
+  it("shows zero available rate limit resets and omits malformed counts", async () => {
+    const ctx = makeCtx()
+    ctx.host.fs.writeText("~/.codex/auth.json", JSON.stringify({
+      tokens: { access_token: "token" },
+      last_refresh: new Date().toISOString(),
+    }))
+    const plugin = await loadPlugin()
+
+    ctx.host.http.request.mockReturnValueOnce({
+      status: 200,
+      headers: {},
+      bodyText: JSON.stringify({
+        rate_limit_reset_credits: { available_count: 0 },
+      }),
+    })
+    const zeroResult = plugin.probe(ctx)
+    expect(zeroResult.lines.find((line) => line.label === "Rate Limit Resets")?.value)
+      .toBe("0 available")
+
+    ctx.host.http.request.mockReturnValueOnce({
+      status: 200,
+      headers: {},
+      bodyText: JSON.stringify({
+        rate_limit_reset_credits: { available_count: null },
+      }),
+    })
+    const malformedResult = plugin.probe(ctx)
+    expect(malformedResult.lines.find((line) => line.label === "Rate Limit Resets"))
+      .toBeUndefined()
   })
 
   it("omits resetsAt when window lacks reset info", async () => {
