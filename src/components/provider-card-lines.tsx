@@ -141,17 +141,28 @@ function MetricLineRenderer({
   refreshing?: boolean
 }) {
   if (line.type === "text") {
+    const valueSpan = (
+      <span
+        className="text-xs text-muted-foreground truncate min-w-0 max-w-[60%] text-right"
+        style={line.color ? { color: line.color } : undefined}
+        title={line.tooltip ? undefined : line.value}
+      >
+        {line.value}
+      </span>
+    )
+
     return (
       <div>
         <div className="flex justify-between items-center h-[18px]">
           <span className="text-xs text-muted-foreground flex-shrink-0">{line.label}</span>
-          <span
-            className="text-xs text-muted-foreground truncate min-w-0 max-w-[60%] text-right"
-            style={line.color ? { color: line.color } : undefined}
-            title={line.value}
-          >
-            {line.value}
-          </span>
+          {line.tooltip ? (
+            <Tooltip>
+              <TooltipTrigger render={(props) => <span {...props}>{valueSpan}</span>} />
+              <TooltipContent side="top" className="text-xs whitespace-pre-line">{line.tooltip}</TooltipContent>
+            </Tooltip>
+          ) : (
+            valueSpan
+          )}
         </div>
         {line.subtitle && (
           <div className="text-[10px] text-muted-foreground text-right -mt-0.5">{line.subtitle}</div>

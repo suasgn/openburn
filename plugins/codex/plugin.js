@@ -2,6 +2,7 @@
   const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
   const REFRESH_URL = "https://auth.openai.com/oauth/token"
   const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+  const RESET_CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
   const CREDIT_USD_RATE = 0.04
   const DAY_MS = 24 * 60 * 60 * 1000
   const REFRESH_AGE_MS = 7 * DAY_MS
@@ -166,6 +167,46 @@
       headers,
       timeoutMs: 10000,
     })
+  }
+
+  function fetchRateLimitResetCredits(ctx, accessToken, accountId) {
+    const headers = {
+      Authorization: "Bearer " + accessToken,
+      Accept: "application/json",
+      "User-Agent": "openburn",
+    }
+    if (accountId) {
+      headers["ChatGPT-Account-Id"] = accountId
+    }
+    return ctx.util.request({
+      method: "GET",
+      url: RESET_CREDITS_URL,
+      headers,
+      timeoutMs: 10000,
+    })
+  }
+
+  function formatDate(isoStr) {
+    if (!isoStr) return null
+    const d = new Date(isoStr)
+    if (isNaN(d.getTime())) return null
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    return months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear()
+  }
+
+  function buildResetCreditsTooltip(credits) {
+    if (!Array.isArray(credits) || credits.length === 0) return null
+    const lines = []
+    for (let i = 0; i < credits.length; i++) {
+      const c = credits[i]
+      if (!c || c.status !== "available") continue
+      const granted = formatDate(c.granted_at)
+      const expires = formatDate(c.expires_at)
+      if (granted && expires) {
+        lines.push("Given: " + granted + "  Expires: " + expires)
+      }
+    }
+    return lines.length > 0 ? lines.join("\n") : null
   }
 
   function readPercent(value) {
@@ -526,6 +567,19 @@
         throw "Usage response invalid. Try again later."
       }
 
+      let resetCreditsDetail = null
+      try {
+        const creditsResp = fetchRateLimitResetCredits(ctx, accessToken, accountId)
+        if (creditsResp.status >= 200 && creditsResp.status < 300) {
+          const creditsData = ctx.util.tryParseJson(creditsResp.bodyText)
+          if (creditsData && Array.isArray(creditsData.credits)) {
+            resetCreditsDetail = creditsData.credits
+          }
+        }
+      } catch (e) {
+        ctx.host.log.warn("reset credits fetch failed: " + String(e))
+      }
+
       const lines = []
       const nowSec = Math.floor(Date.now() / 1000)
       const rateLimit = data.rate_limit || null
@@ -638,10 +692,13 @@
           ? readNumber(data.rate_limit_reset_credits.available_count)
           : null
       if (resetCredits !== null && resetCredits >= 0) {
-        lines.push(ctx.line.text({
+        const tooltip = buildResetCreditsTooltip(resetCreditsDetail)
+        const lineOpts = {
           label: "Rate Limit Resets",
           value: Math.floor(resetCredits) + " available",
-        }))
+        }
+        if (tooltip) lineOpts.tooltip = tooltip
+        lines.push(ctx.line.text(lineOpts))
       }
 
       const creditsRemaining = readCreditsRemaining(resp, data)

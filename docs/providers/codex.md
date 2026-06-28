@@ -63,6 +63,41 @@ Returns rate limit windows, optional credits, and available on-demand rate limit
 
 Both rate_limit windows are enforced simultaneously — hitting either limit throttles the user.
 
+### GET /backend-api/wham/rate-limit-reset-credits
+
+Returns individual reset credit entries with grant and expiry dates.
+
+#### Headers
+
+| Header | Required | Value |
+|---|---|---|
+| Authorization | yes | `Bearer <access_token>` |
+| Accept | yes | `application/json` |
+| ChatGPT-Account-Id | no | `<account_id>` |
+
+#### Response
+
+```jsonc
+{
+  "credits": [
+    {
+      "id": "RateLimitResetCredit_...",
+      "reset_type": "codex_rate_limits",
+      "status": "available",
+      "granted_at": "2026-06-18T00:33:49.661454Z",
+      "expires_at": "2026-07-18T00:33:49.661454Z",
+      "title": "Full reset (Weekly + 5 hr)",
+      "description": "Thanks for using Codex! ..."
+    }
+  ],
+  "available_count": 2,
+  "total_earned_count": 0
+}
+```
+
+The "Rate Limit Resets" text line shows a tooltip on hover with each available credit's
+granted and expiry dates.
+
 OpenBurn floors the remaining credit balance to a whole number and displays its fixed USD
 equivalent at `$0.04` per credit. For example, `820.6969075` renders as
 `$32.80 · 820 credits`. The credit balance is unbounded; the API does not provide a maximum.

@@ -758,13 +758,22 @@ describe("codex plugin", () => {
       tokens: { access_token: "token" },
       last_refresh: new Date().toISOString(),
     }))
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      headers: {},
-      bodyText: JSON.stringify({
-        rate_limit_reset_credits: { available_count: 1 },
-        credits: { balance: 100 },
-      }),
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (opts.url.includes("rate-limit-reset-credits")) {
+        return {
+          status: 200,
+          headers: {},
+          bodyText: JSON.stringify({ credits: [], available_count: 1 }),
+        }
+      }
+      return {
+        status: 200,
+        headers: {},
+        bodyText: JSON.stringify({
+          rate_limit_reset_credits: { available_count: 1 },
+          credits: { balance: 100 },
+        }),
+      }
     })
     ctx.host.ccusage.query.mockReturnValue({
       status: "ok",
@@ -795,27 +804,124 @@ describe("codex plugin", () => {
     }))
     const plugin = await loadPlugin()
 
-    ctx.host.http.request.mockReturnValueOnce({
-      status: 200,
-      headers: {},
-      bodyText: JSON.stringify({
-        rate_limit_reset_credits: { available_count: 0 },
-      }),
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (opts.url.includes("rate-limit-reset-credits")) {
+        return { status: 200, headers: {}, bodyText: JSON.stringify({ credits: [] }) }
+      }
+      return {
+        status: 200,
+        headers: {},
+        bodyText: JSON.stringify({
+          rate_limit_reset_credits: { available_count: 0 },
+        }),
+      }
     })
     const zeroResult = plugin.probe(ctx)
     expect(zeroResult.lines.find((line) => line.label === "Rate Limit Resets")?.value)
       .toBe("0 available")
 
-    ctx.host.http.request.mockReturnValueOnce({
-      status: 200,
-      headers: {},
-      bodyText: JSON.stringify({
-        rate_limit_reset_credits: { available_count: null },
-      }),
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (opts.url.includes("rate-limit-reset-credits")) {
+        return { status: 200, headers: {}, bodyText: JSON.stringify({ credits: [] }) }
+      }
+      return {
+        status: 200,
+        headers: {},
+        bodyText: JSON.stringify({
+          rate_limit_reset_credits: { available_count: null },
+        }),
+      }
     })
     const malformedResult = plugin.probe(ctx)
     expect(malformedResult.lines.find((line) => line.label === "Rate Limit Resets"))
       .toBeUndefined()
+  })
+
+  it("includes tooltip with reset credit dates when available", async () => {
+    const ctx = makeCtx()
+    ctx.host.fs.writeText("~/.codex/auth.json", JSON.stringify({
+      tokens: { access_token: "token" },
+      last_refresh: new Date().toISOString(),
+    }))
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (opts.url.includes("rate-limit-reset-credits")) {
+        return {
+          status: 200,
+          headers: {},
+          bodyText: JSON.stringify({
+            credits: [
+              {
+                id: "credit1",
+                status: "available",
+                granted_at: "2026-06-18T00:33:49Z",
+                expires_at: "2026-07-18T00:33:49Z",
+              },
+              {
+                id: "credit2",
+                status: "available",
+                granted_at: "2026-06-27T00:05:32Z",
+                expires_at: "2026-07-27T00:05:32Z",
+              },
+            ],
+          }),
+        }
+      }
+      return {
+        status: 200,
+        headers: {},
+        bodyText: JSON.stringify({
+          rate_limit_reset_credits: { available_count: 2 },
+          credits: { balance: 100 },
+        }),
+      }
+    })
+    ctx.host.ccusage.query.mockReturnValue({
+      status: "ok",
+      data: { daily: [] },
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+    const resetLine = result.lines.find((line) => line.label === "Rate Limit Resets")
+
+    expect(resetLine).toBeTruthy()
+    expect(resetLine.value).toBe("2 available")
+    expect(resetLine.tooltip).toBe(
+      "Given: Jun 18, 2026  Expires: Jul 18, 2026\nGiven: Jun 27, 2026  Expires: Jul 27, 2026"
+    )
+  })
+
+  it("omits tooltip when credits fetch fails", async () => {
+    const ctx = makeCtx()
+    ctx.host.fs.writeText("~/.codex/auth.json", JSON.stringify({
+      tokens: { access_token: "token" },
+      last_refresh: new Date().toISOString(),
+    }))
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (opts.url.includes("rate-limit-reset-credits")) {
+        return { status: 500, headers: {}, bodyText: "" }
+      }
+      return {
+        status: 200,
+        headers: {},
+        bodyText: JSON.stringify({
+          rate_limit_reset_credits: { available_count: 1 },
+          credits: { balance: 100 },
+        }),
+      }
+    })
+    ctx.host.ccusage.query.mockReturnValue({
+      status: "ok",
+      data: { daily: [] },
+    })
+
+    const plugin = await loadPlugin()
+    const result = plugin.probe(ctx)
+    const resetLine = result.lines.find((line) => line.label === "Rate Limit Resets")
+
+    expect(resetLine).toBeTruthy()
+    expect(resetLine.value).toBe("1 available")
+    expect(resetLine.tooltip).toBeUndefined()
   })
 
   it("omits resetsAt when window lacks reset info", async () => {

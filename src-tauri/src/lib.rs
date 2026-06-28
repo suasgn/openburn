@@ -226,11 +226,13 @@ fn prefix_metric_line(
             value,
             color,
             subtitle,
+            tooltip,
         } => plugin_engine::runtime::MetricLine::Text {
             label: scoped_account_label(account, &label),
             value,
             color,
             subtitle,
+            tooltip,
         },
         plugin_engine::runtime::MetricLine::Progress {
             label,

@@ -32,6 +32,7 @@ pub enum MetricLine {
         value: String,
         color: Option<String>,
         subtitle: Option<String>,
+        tooltip: Option<String>,
     },
     Progress {
         label: String,
@@ -303,11 +304,13 @@ fn parse_lines(result: &Object) -> Result<Vec<MetricLine>, String> {
         match line_type.as_str() {
             "text" => {
                 let value = line.get::<_, String>("value").unwrap_or_default();
+                let tooltip = line.get::<_, String>("tooltip").ok();
                 out.push(MetricLine::Text {
                     label,
                     value,
                     color,
                     subtitle,
+                    tooltip,
                 });
             }
             "progress" => {
