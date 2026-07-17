@@ -24,9 +24,6 @@ mod tests {
     fn builds_log_file_path_from_log_dir() {
         let path = log_file_path(&PathBuf::from("/logs/openburn"), "OpenBurn");
 
-        assert_eq!(
-            path,
-            PathBuf::from("/logs/openburn/OpenBurn.log")
-        );
+        assert_eq!(path, PathBuf::from("/logs/openburn/OpenBurn.log"));
     }
 }

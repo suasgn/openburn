@@ -15,6 +15,17 @@ Track all your AI coding subscriptions in one place from your menu bar. No diggi
 
 The app auto-updates. Install once and you're set.
 
+## Android
+
+Android builds are available from the Tauri project:
+
+```bash
+bun run android:dev
+bun run android:build
+```
+
+Requires Android Studio/SDK, an Android device or emulator, and the Android NDK.
+
 ## What It Does
 
 OpenBurn lives in your menu bar and shows you how much of your AI coding subscriptions you've used. Progress bars, badges, and clear labels. No mental math required.

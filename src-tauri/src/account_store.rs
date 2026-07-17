@@ -15,6 +15,7 @@ use crate::utils::now_rfc3339;
 
 const STORE_FILE_NAME: &str = "accounts.json";
 const STORE_SCHEMA_VERSION: u32 = 1;
+const REMOVED_PLUGIN_IDS: &[&str] = &["opencode-go"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,10 +68,21 @@ impl AccountStore {
             Err(err) => return Err(err.into()),
         };
 
-        Ok(Self {
+        let mut state = state;
+        let original_count = state.accounts.len();
+        state
+            .accounts
+            .retain(|account| !REMOVED_PLUGIN_IDS.contains(&account.plugin_id.as_str()));
+        let removed_legacy_accounts = original_count != state.accounts.len();
+        let store = Self {
             path,
             state: Mutex::new(state),
-        })
+        };
+        if removed_legacy_accounts {
+            let state = store.lock_state()?;
+            store.save_locked(&state)?;
+        }
+        Ok(store)
     }
 
     pub fn list_accounts(&self) -> Result<Vec<AccountRecord>> {
@@ -402,6 +414,33 @@ mod tests {
         assert_eq!(accounts[0].label, "Codex Personal");
 
         fs::remove_dir_all(parent).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn removes_legacy_opencode_go_accounts_on_load() {
+        let path = make_temp_store_path();
+        let store = AccountStore::load_from_path(path.clone()).expect("store should load");
+        store
+            .create_account(CreateAccountInput {
+                plugin_id: "opencode-go".to_string(),
+                auth_strategy_id: Some("apiKey".to_string()),
+                label: Some("OpenCode Go".to_string()),
+                settings: Some(serde_json::json!({})),
+            })
+            .expect("legacy account should be created for test");
+
+        let reloaded = AccountStore::load_from_path(path.clone()).expect("store should reload");
+        assert!(
+            reloaded
+                .list_accounts()
+                .expect("list should succeed")
+                .is_empty()
+        );
+        assert!(
+            !fs::read_to_string(path)
+                .expect("store file should be readable")
+                .contains("opencode-go")
+        );
     }
 
     #[test]

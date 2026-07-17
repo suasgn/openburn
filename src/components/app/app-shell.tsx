@@ -9,6 +9,7 @@ import { usePanel } from "@/hooks/app/use-panel"
 import { useAppUpdate } from "@/hooks/use-app-update"
 import { useAppUiStore } from "@/stores/app-ui-store"
 import type { AccountOrderByPlugin } from "@/lib/settings"
+import { isMobileTauri } from "@/lib/platform"
 
 const ARROW_OVERHEAD_PX = 37
 
@@ -70,17 +71,18 @@ export function AppShell({
 
   const appVersion = useAppVersion()
   const { updateStatus, triggerInstall, checkForUpdates } = useAppUpdate()
+  const isMobile = isMobileTauri()
   const panelHeightPx = maxPanelHeightPx ? Math.max(1, maxPanelHeightPx - ARROW_OVERHEAD_PX) : undefined
 
   return (
     <div
       ref={containerRef}
       tabIndex={-1}
-      className="flex flex-col items-center p-6 pt-1.5 bg-transparent outline-none"
+      className={`flex flex-col items-center bg-transparent outline-none ${isMobile ? "h-screen w-screen p-0" : "p-6 pt-1.5"}`}
     >
-      <div className="tray-arrow" />
+      {!isMobile && <div className="tray-arrow" />}
       <div
-        className="relative bg-card rounded-xl overflow-hidden select-none w-full border shadow-lg flex flex-col"
+        className={`relative bg-card overflow-hidden select-none w-full flex flex-col ${isMobile ? "h-full rounded-none border-0 shadow-none" : "rounded-xl border shadow-lg"}`}
         style={panelHeightPx ? { height: `${panelHeightPx}px`, maxHeight: `${panelHeightPx}px` } : undefined}
       >
         <div className="flex flex-1 min-h-0 flex-row">
@@ -92,9 +94,9 @@ export function AppShell({
             isPluginRefreshAvailable={isPluginRefreshAvailable}
             onReorder={onNavReorder}
           />
-          <div className="flex-1 flex flex-col px-3 pt-2 pb-1.5 min-w-0 bg-card dark:bg-muted/50">
-            <div className="relative flex-1 min-h-0">
-              <div ref={scrollRef} className="h-full overflow-y-auto scrollbar-none">
+          <div className="flex-1 flex min-h-0 flex-col px-3 pt-2 pb-1.5 min-w-0 bg-card dark:bg-muted/50">
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scrollbar-none">
                 <AppContent
                   {...appContentProps}
                   displayPlugins={displayPlugins}

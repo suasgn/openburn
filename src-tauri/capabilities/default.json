@@ -5,19 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:tray:default",
-    "core:image:default",
-    "core:window:allow-set-size",
-    "core:window:allow-outer-size",
-    "core:window:allow-inner-size",
-    "core:window:allow-scale-factor",
     "opener:default",
     "store:default",
-    "updater:default",
-    "process:allow-restart",
-    "global-shortcut:default",
-    "autostart:default",
-    "clipboard-manager:allow-write-text",
-    "core:menu:default"
+    "log:default",
+    "clipboard-manager:allow-write-text"
   ]
 }

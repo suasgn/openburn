@@ -43,6 +43,13 @@ export type ExternalAuthSyncResult = {
   remainingPercent?: number | null
 }
 
+export type AccountTransferResult = AccountRecord[]
+
+export type AccountCrocTransfer = {
+  code: string
+  accountCount: number
+}
+
 export function listAccounts(): Promise<AccountRecord[]> {
   return invoke<AccountRecord[]>("list_accounts")
 }
@@ -72,6 +79,18 @@ export function setAccountCredentials(
 
 export function clearAccountCredentials(accountId: string): Promise<void> {
   return invoke("clear_account_credentials", { accountId })
+}
+
+export function startAccountTransferCroc(): Promise<AccountCrocTransfer> {
+  return invoke<AccountCrocTransfer>("start_account_transfer_croc")
+}
+
+export function finishAccountTransferCroc(): Promise<void> {
+  return invoke("finish_account_transfer_croc")
+}
+
+export function importAccountTransferCroc(code: string): Promise<AccountTransferResult> {
+  return invoke<AccountTransferResult>("import_account_transfer_croc", { code })
 }
 
 export function syncAccountToOpencodeAuth(accountId: string): Promise<ExternalAuthSyncResult> {

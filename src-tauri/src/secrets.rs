@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(mobile)]
+use std::fs;
 use std::sync::{Mutex, OnceLock};
 
 use base64::Engine;
@@ -6,16 +8,22 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce, XChaCha20Poly1305, XNonce};
 use hkdf::Hkdf;
+#[cfg(desktop)]
+use keyring::Entry;
 use rand::RngCore;
 use rand::rngs::OsRng;
 use sha2::Sha256;
+#[cfg(mobile)]
+use tauri::Manager;
 use tauri::{AppHandle, Runtime};
-use tauri_plugin_keyring::KeyringExt;
+#[cfg(desktop)]
+use tauri_plugin_keyring_store::KeyringExt;
 
 use crate::account_store::AccountStore;
 use crate::error::{BackendError, Result};
 use crate::models::{AccountRecord, EncryptedCredentials};
 
+#[cfg(desktop)]
 const SERVICE_NAME: &str = "openburn";
 const MASTER_KEY_PREFIX: &str = "master-key-v";
 const KEY_VERSION: u32 = 1;
@@ -32,6 +40,51 @@ fn master_key_name(version: u32) -> String {
     format!("{MASTER_KEY_PREFIX}{version}")
 }
 
+#[cfg(mobile)]
+fn mobile_master_key_path<R: Runtime>(
+    app: &AppHandle<R>,
+    version: u32,
+) -> Result<std::path::PathBuf> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| BackendError::Path(error.to_string()))?;
+    Ok(data_dir.join(format!("{}.bin", master_key_name(version))))
+}
+
+#[cfg(mobile)]
+fn read_mobile_master_key<R: Runtime>(
+    app: &AppHandle<R>,
+    version: u32,
+) -> Result<Option<[u8; 32]>> {
+    let path = mobile_master_key_path(app, version)?;
+    match fs::read(path) {
+        Ok(payload) => payload
+            .try_into()
+            .map(Some)
+            .map_err(|_| BackendError::Crypto("master key length invalid".to_string())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn persist_master_key<R: Runtime>(app: &AppHandle<R>, version: u32, key: &[u8; 32]) -> Result<()> {
+    #[cfg(mobile)]
+    {
+        let path = mobile_master_key_path(app, version)?;
+        fs::write(path, key)?;
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        app.keyring()
+            .store
+            .set_bytes(&master_key_name(version), key)
+            .map_err(|error| BackendError::Keyring(error.to_string()))
+    }
+}
+
 fn read_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Result<Option<[u8; 32]>> {
     let cache = MASTER_KEY_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(key) = cache
@@ -43,22 +96,36 @@ fn read_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Result<Optio
         return Ok(Some(key));
     }
 
-    let key_name = master_key_name(version);
-    let payload = app
-        .keyring()
-        .get_secret(SERVICE_NAME, &key_name)
-        .map_err(|err| BackendError::Keyring(err.to_string()))?;
-    let payload = match payload {
-        Some(payload) => payload,
-        None => return Ok(None),
+    #[cfg(mobile)]
+    let key = read_mobile_master_key(app, version)?;
+
+    #[cfg(desktop)]
+    let key = match app.keyring().store.get_bytes(&master_key_name(version)) {
+        Ok(Some(payload)) => Some(
+            payload
+                .try_into()
+                .map_err(|_| BackendError::Crypto("master key length invalid".to_string()))?,
+        ),
+        Ok(None) => {
+            let entry = Entry::new(SERVICE_NAME, &master_key_name(version))
+                .map_err(|error| BackendError::Keyring(error.to_string()))?;
+            let Some(payload) = entry.get_secret().ok() else {
+                return Ok(None);
+            };
+            Some(payload.try_into().map_err(|_| {
+                BackendError::Crypto("legacy master key length invalid".to_string())
+            })?)
+        }
+        Err(error) => return Err(BackendError::Keyring(error.to_string())),
     };
 
-    let key: [u8; 32] = payload
-        .try_into()
-        .map_err(|_| BackendError::Crypto("master key length invalid".to_string()))?;
-    let mut cache = cache.lock().expect("master key cache mutex poisoned");
-    cache.insert(version, key);
-    Ok(Some(key))
+    if let Some(key) = key {
+        let mut cache = cache.lock().expect("master key cache mutex poisoned");
+        cache.insert(version, key);
+        Ok(Some(key))
+    } else {
+        Ok(None)
+    }
 }
 
 fn get_or_create_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Result<[u8; 32]> {
@@ -68,10 +135,7 @@ fn get_or_create_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Res
 
     let mut key = [0u8; 32];
     OsRng.fill_bytes(&mut key);
-    let key_name = master_key_name(version);
-    app.keyring()
-        .set_secret(SERVICE_NAME, &key_name, &key)
-        .map_err(|err| BackendError::Keyring(err.to_string()))?;
+    persist_master_key(app, version, &key)?;
 
     let cache = MASTER_KEY_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     cache
@@ -89,6 +153,7 @@ fn derive_key(master_key: &[u8; 32], credential_id: &str) -> Result<[u8; 32]> {
     Ok(derived)
 }
 
+#[allow(deprecated)]
 fn encrypt_credentials<R: Runtime>(
     app: &AppHandle<R>,
     account: &AccountRecord,
@@ -123,6 +188,7 @@ fn encrypt_credentials<R: Runtime>(
 }
 
 #[allow(dead_code)]
+#[allow(deprecated)]
 fn decrypt_credentials<R: Runtime>(
     app: &AppHandle<R>,
     account: &AccountRecord,

@@ -91,11 +91,11 @@ describe("AppContent", () => {
     expect(overviewPageMock).toHaveBeenCalledTimes(1)
   })
 
-  it("renders settings page for settings view", () => {
+  it("renders settings page for settings view", async () => {
     useAppUiStore.getState().setActiveView("settings")
     render(<AppContent {...createProps()} />)
 
-    expect(screen.getByTestId("settings-page")).toBeInTheDocument()
+    expect(await screen.findByTestId("settings-page")).toBeInTheDocument()
     expect(settingsPageMock).toHaveBeenCalledTimes(1)
   })
 

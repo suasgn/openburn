@@ -1,20 +1,26 @@
 mod account_auth;
 mod account_import;
 mod account_store;
+mod account_transfer;
+mod account_transfer_croc;
 #[cfg(target_os = "macos")]
 mod app_nap;
 mod auth;
 mod config;
+mod croc_protocol;
 mod error;
 mod external_auth;
 mod local_http_api;
+#[cfg(target_os = "macos")]
 mod log_path;
 mod models;
 mod oauth;
 mod opencode_auth_file;
+#[cfg(target_os = "macos")]
 mod panel;
 mod plugin_engine;
 mod secrets;
+#[cfg(target_os = "macos")]
 mod tray;
 mod utils;
 #[cfg(target_os = "macos")]
@@ -23,7 +29,9 @@ mod webkit_config;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
+#[cfg(desktop)]
+use std::sync::OnceLock;
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
@@ -33,6 +41,7 @@ use uuid::Uuid;
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+#[cfg(desktop)]
 const GLOBAL_SHORTCUT_STORE_KEY: &str = "globalShortcut";
 const MAX_CONCURRENT_PROBES: usize = 4;
 
@@ -54,7 +63,10 @@ fn handle_global_shortcut(
 ) {
     if event.state == ShortcutState::Pressed {
         log::debug!("Global shortcut triggered");
+        #[cfg(target_os = "macos")]
         panel::toggle_panel(app);
+        #[cfg(not(target_os = "macos"))]
+        let _ = app;
     }
 }
 
@@ -146,21 +158,27 @@ pub struct ProbeBatchComplete {
 }
 
 #[tauri::command]
+#[allow(unused_variables)]
 fn init_panel(app_handle: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
     panel::init(&app_handle).expect("Failed to initialize panel");
 }
 
 #[tauri::command]
+#[allow(unused_variables)]
 fn hide_panel(app_handle: tauri::AppHandle) {
-    use tauri_nspanel::ManagerExt;
-    if let Ok(panel) = app_handle.get_webview_panel("main") {
-        panel.hide();
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_nspanel::ManagerExt;
+        if let Ok(panel) = app_handle.get_webview_panel("main") {
+            panel.hide();
+        }
     }
 }
 
 #[tauri::command]
 fn open_devtools(#[allow(unused)] app_handle: tauri::AppHandle) {
-    #[cfg(debug_assertions)]
+    #[cfg(all(desktop, debug_assertions))]
     {
         use tauri::Manager;
         if let Some(window) = app_handle.get_webview_window("main") {
@@ -192,6 +210,14 @@ fn is_error_output(output: &plugin_engine::runtime::PluginOutput) -> bool {
     output.lines.iter().any(|line| {
         matches!(line, plugin_engine::runtime::MetricLine::Badge { label, .. } if label == "Error")
     })
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string())
 }
 
 fn account_label(account: &models::AccountRecord) -> String {
@@ -606,8 +632,22 @@ async fn start_probe_batch(
                             },
                         );
                     }
-                    Err(_) => {
-                        log::error!("probe {} panicked", plugin_id);
+                    Err(payload) => {
+                        let panic_message = panic_message(payload.as_ref());
+                        log::error!("probe {} panicked: {}", plugin_id, panic_message);
+                        let _ = handle.emit(
+                            "probe:result",
+                            ProbeResult {
+                                batch_id: bid.clone(),
+                                output: plugin_error_output(
+                                    &plugin,
+                                    format!(
+                                        "{} probe failed unexpectedly: {}",
+                                        plugin.manifest.name, panic_message
+                                    ),
+                                ),
+                            },
+                        );
                     }
                 }
 
@@ -632,10 +672,10 @@ async fn start_probe_batch(
 
 #[tauri::command]
 fn get_log_path(app_handle: tauri::AppHandle) -> Result<String, String> {
-    // macOS log directory: ~/Library/Logs/{bundleIdentifier}
-    let home = dirs::home_dir().ok_or("no home dir")?;
-    let bundle_id = app_handle.config().identifier.clone();
-    let log_dir = home.join("Library").join("Logs").join(&bundle_id);
+    let log_dir = app_handle
+        .path()
+        .app_log_dir()
+        .map_err(|error| error.to_string())?;
     let log_file = log_dir.join(format!("{}.log", app_handle.package_info().name));
     Ok(log_file.to_string_lossy().to_string())
 }
@@ -696,6 +736,12 @@ fn update_global_shortcut(
         *managed_shortcut = None;
     }
 
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn update_global_shortcut(_shortcut: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
@@ -912,6 +958,43 @@ fn clear_account_credentials(
 }
 
 #[tauri::command]
+fn start_account_transfer_croc(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    croc_state: tauri::State<'_, account_transfer_croc::CrocTransferState>,
+) -> Result<account_transfer_croc::CrocTransferStart, String> {
+    let plugins = state.lock().map_err(|err| err.to_string())?.plugins.clone();
+    let payload = account_transfer::export_account_transfer(&app, store.inner(), &plugins)
+        .map_err(|err| err.to_string())?;
+    account_transfer_croc::start(payload, croc_state.inner()).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn finish_account_transfer_croc(
+    croc_state: tauri::State<'_, account_transfer_croc::CrocTransferState>,
+) -> Result<(), String> {
+    account_transfer_croc::finish(croc_state.inner())
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn import_account_transfer_croc(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    code: String,
+) -> Result<Vec<models::AccountRecord>, String> {
+    let payload = account_transfer_croc::receive(&code)
+        .await
+        .map_err(|err| err.to_string())?;
+    let plugins = state.lock().map_err(|err| err.to_string())?.plugins.clone();
+    account_transfer::import_account_transfer(&app, store.inner(), &plugins, &payload)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn sync_account_to_opencode_auth(
     app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
@@ -980,11 +1063,9 @@ pub fn run() {
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = runtime.enter();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_keyring::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_nspanel::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -999,10 +1080,35 @@ pub fn run() {
                 .level_for("tauri_plugin_updater", log::LevelFilter::Info)
                 .build(),
         )
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
-        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_clipboard_manager::init());
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(
+            tauri_plugin_keyring_store::Builder::new()
+                .service("openburn")
+                .build(),
+        );
+    }
+
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_process::init())
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_autostart::Builder::new().build());
+    }
+
+    #[cfg(mobile)]
+    {
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
             init_panel,
             hide_panel,
@@ -1016,6 +1122,9 @@ pub fn run() {
             set_account_credentials,
             has_account_credentials,
             clear_account_credentials,
+            start_account_transfer_croc,
+            finish_account_transfer_croc,
+            import_account_transfer_croc,
             sync_account_to_opencode_auth,
             list_opencode_auth_account_matches,
             start_account_auth,
@@ -1066,12 +1175,15 @@ pub fn run() {
                 .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
             app.manage(account_store);
             app.manage(auth::AuthState::new());
+            app.manage(account_transfer_croc::CrocTransferState::default());
 
             local_http_api::init(&app_data_dir, known_plugin_ids);
             local_http_api::start_server(app.handle().clone());
 
+            #[cfg(target_os = "macos")]
             tray::create(app.handle())?;
 
+            #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 

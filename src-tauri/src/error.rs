@@ -10,6 +10,7 @@ pub enum BackendError {
     Json(#[from] serde_json::Error),
     #[error("store error: {0}")]
     Store(String),
+    #[cfg(desktop)]
     #[error("keyring error: {0}")]
     Keyring(String),
     #[error("crypto error: {0}")]

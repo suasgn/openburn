@@ -1,7 +1,7 @@
+import { lazy, Suspense } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { OverviewPage } from "@/pages/overview"
 import { ProviderDetailPage } from "@/pages/provider-detail"
-import { SettingsPage } from "@/pages/settings"
 import type { DisplayPluginState } from "@/hooks/app/use-app-plugin-views"
 import type { SettingsPluginState } from "@/hooks/app/use-settings-plugin-list"
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon"
@@ -17,6 +17,10 @@ import type {
   ThemeMode,
   TimeFormatMode,
 } from "@/lib/settings"
+
+const SettingsPage = lazy(() => import("@/pages/settings").then((module) => ({
+  default: module.SettingsPage,
+})))
 
 type AppContentDerivedProps = {
   displayPlugins: DisplayPluginState[]
@@ -111,29 +115,31 @@ export function AppContent({
 
   if (activeView === "settings") {
     return (
-      <SettingsPage
-        plugins={settingsPlugins}
-        onAccountChanged={onAccountChanged}
-        onAccountOrderChanged={onAccountOrderChanged}
-        onPluginEnabledChange={onPluginEnabledChange}
-        autoUpdateInterval={autoUpdateInterval}
-        onAutoUpdateIntervalChange={onAutoUpdateIntervalChange}
-        themeMode={themeMode}
-        onThemeModeChange={onThemeModeChange}
-        displayMode={displayMode}
-        onDisplayModeChange={onDisplayModeChange}
-        resetTimerDisplayMode={resetTimerDisplayMode}
-        onResetTimerDisplayModeChange={onResetTimerDisplayModeChange}
-        timeFormatMode={timeFormatMode}
-        onTimeFormatModeChange={onTimeFormatModeChange}
-        menubarIconStyle={menubarIconStyle}
-        onMenubarIconStyleChange={onMenubarIconStyleChange}
-        traySettingsPreview={traySettingsPreview}
-        globalShortcut={globalShortcut}
-        onGlobalShortcutChange={onGlobalShortcutChange}
-        startOnLogin={startOnLogin}
-        onStartOnLoginChange={onStartOnLoginChange}
-      />
+      <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading settings…</div>}>
+        <SettingsPage
+          plugins={settingsPlugins}
+          onAccountChanged={onAccountChanged}
+          onAccountOrderChanged={onAccountOrderChanged}
+          onPluginEnabledChange={onPluginEnabledChange}
+          autoUpdateInterval={autoUpdateInterval}
+          onAutoUpdateIntervalChange={onAutoUpdateIntervalChange}
+          themeMode={themeMode}
+          onThemeModeChange={onThemeModeChange}
+          displayMode={displayMode}
+          onDisplayModeChange={onDisplayModeChange}
+          resetTimerDisplayMode={resetTimerDisplayMode}
+          onResetTimerDisplayModeChange={onResetTimerDisplayModeChange}
+          timeFormatMode={timeFormatMode}
+          onTimeFormatModeChange={onTimeFormatModeChange}
+          menubarIconStyle={menubarIconStyle}
+          onMenubarIconStyleChange={onMenubarIconStyleChange}
+          traySettingsPreview={traySettingsPreview}
+          globalShortcut={globalShortcut}
+          onGlobalShortcutChange={onGlobalShortcutChange}
+          startOnLogin={startOnLogin}
+          onStartOnLoginChange={onStartOnLoginChange}
+        />
+      </Suspense>
     )
   }
 

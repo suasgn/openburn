@@ -9,6 +9,7 @@ import { getTrayPrimaryBars, getTrayPrimaryTotalBar, type TrayPrimaryBar } from 
 import { formatTrayPercentText, formatTrayTooltip } from "@/lib/tray-tooltip"
 import { APP_NAME } from "@/lib/brand"
 import type { PluginState } from "@/hooks/app/types"
+import { isMobileTauri } from "@/lib/platform"
 
 type TrayUpdateReason = "probe" | "settings" | "init"
 
@@ -104,6 +105,8 @@ export function useTrayIcon({
     _reason: TrayUpdateReason,
     delayMs = 0,
   ) => {
+    if (isMobileTauri()) return
+
     if (trayUpdateTimerRef.current !== null) {
       window.clearTimeout(trayUpdateTimerRef.current)
       trayUpdateTimerRef.current = null
@@ -357,6 +360,7 @@ export function useTrayIcon({
 
   const trayInitializedRef = useRef(false)
   useEffect(() => {
+    if (isMobileTauri()) return
     if (trayInitializedRef.current) return
     let cancelled = false
 

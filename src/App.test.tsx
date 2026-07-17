@@ -381,6 +381,12 @@ describe("App", () => {
     return contextAction as () => void
   }
 
+  const openSettings = async () => {
+    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
+    await userEvent.click(settingsButtons[0])
+    await screen.findByText("Auto Refresh", {}, { timeout: 10_000 })
+  }
+
   it("applies theme mode changes to document", async () => {
     const mq = {
       matches: false,
@@ -390,8 +396,7 @@ describe("App", () => {
     const mmSpy = vi.spyOn(window, "matchMedia").mockReturnValue(mq)
 
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     // Dark
     await userEvent.click(await screen.findByRole("radio", { name: "Dark" }))
@@ -433,8 +438,7 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
 
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     expect(state.trackMock).not.toHaveBeenCalledWith("page_viewed", expect.anything())
     expect(state.trackMock).not.toHaveBeenCalledWith("page_viewed", undefined)
@@ -715,8 +719,7 @@ describe("App", () => {
     })
     await waitFor(() => expect(state.traySetTitleMock).toHaveBeenCalledWith("60%"))
 
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
     await waitFor(() => {
       const latestCall = state.renderTrayBarsIconMock.mock.calls.at(-1)?.[0]
       expect(latestCall.providerIconUrl).toBe("icon-b")
@@ -740,8 +743,7 @@ describe("App", () => {
 
   it("updates display mode in settings", async () => {
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     await userEvent.click(await screen.findByRole("radio", { name: "Used" }))
     expect(state.saveDisplayModeMock).toHaveBeenCalledWith("used")
@@ -749,8 +751,7 @@ describe("App", () => {
 
   it("updates time format mode in settings", async () => {
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     await userEvent.click(await screen.findByRole("radio", { name: /24-hour/ }))
     expect(state.saveTimeFormatModeMock).toHaveBeenCalledWith("24h")
@@ -758,8 +759,7 @@ describe("App", () => {
 
   it("settings UI persists menubar icon style change", async () => {
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     expect(screen.getByText("Menubar Icon")).toBeVisible()
     const barsRadio = await screen.findByRole("radio", { name: "Bars" })
@@ -775,8 +775,7 @@ describe("App", () => {
 
   it("settings UI persists donut menubar icon style change", async () => {
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     expect(screen.getByText("Menubar Icon")).toBeVisible()
     const donutRadio = await screen.findByRole("radio", { name: "Donut" })
@@ -795,8 +794,7 @@ describe("App", () => {
     state.saveDisplayModeMock.mockRejectedValueOnce(new Error("save display mode"))
 
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     await userEvent.click(await screen.findByRole("radio", { name: "Used" }))
     await waitFor(() => expect(errorSpy).toHaveBeenCalled())
@@ -809,8 +807,7 @@ describe("App", () => {
     state.saveTimeFormatModeMock.mockRejectedValueOnce(new Error("save time format mode"))
 
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     await userEvent.click(await screen.findByRole("radio", { name: /12-hour/ }))
     await waitFor(() =>
@@ -822,8 +819,7 @@ describe("App", () => {
 
   it("does not render legacy bar icon controls in settings", async () => {
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
     expect(screen.queryByText("Bar Icon")).not.toBeInTheDocument()
     expect(screen.queryByText("Show percentage")).not.toBeInTheDocument()
   })
@@ -854,8 +850,7 @@ describe("App", () => {
   it("does not render plugin toggles in settings", async () => {
     state.loadPluginSettingsMock.mockResolvedValue({ order: ["a", "b"], disabled: ["b"] })
     render(<App />)
-    const settingsButtons = await screen.findAllByRole("button", { name: "Settings" })
-    await userEvent.click(settingsButtons[0])
+    await openSettings()
 
     expect(screen.queryByText("Plugins")).not.toBeInTheDocument()
     expect(screen.getByText("Start on login")).toBeInTheDocument()

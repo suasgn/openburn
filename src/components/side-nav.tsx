@@ -32,6 +32,7 @@ function GaugeIcon({ className }: { className?: string }) {
 import { cn } from "@/lib/utils"
 import { getRelativeLuminance } from "@/lib/color"
 import { useDarkMode } from "@/hooks/use-dark-mode"
+import { isMobileTauri } from "@/lib/platform"
 
 type ActiveView = "home" | "settings" | string
 
@@ -179,6 +180,7 @@ export function SideNav({
   const handlePluginContextMenu = useCallback(
     (e: React.MouseEvent, pluginId: string) => {
       e.preventDefault()
+      if (isMobileTauri()) return
       if (!onPluginContextAction) return
 
       ;(async () => {

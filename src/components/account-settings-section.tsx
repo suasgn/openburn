@@ -17,7 +17,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { AlertCircle, CheckCircle2, ChevronDown, Copy, GripVertical, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Format, requestPermissions, scan } from "@tauri-apps/plugin-barcode-scanner"
+import { AlertCircle, CheckCircle2, ChevronDown, Copy, GripVertical, Plus, QrCode, RefreshCw, ScanLine, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -29,20 +30,25 @@ import {
   type AccountOrderByPlugin,
 } from "@/lib/settings"
 import { cn } from "@/lib/utils"
+import { QrScannerDialog } from "@/components/qr-scanner-dialog"
 import {
   cancelAccountAuth,
   clearAccountCredentials,
   createAccount,
   deleteAccount,
+  finishAccountTransferCroc,
   finishAccountAuth,
   hasAccountCredentials,
+  importAccountTransferCroc,
   listAccounts,
   setAccountCredentials,
+  startAccountTransferCroc,
   startAccountAuth,
   syncAccountToOpencodeAuth,
   updateAccount,
   type AccountRecord,
 } from "@/lib/accounts"
+import { isMobileTauri } from "@/lib/platform"
 
 type AccountSession = {
   requestId: string
@@ -60,6 +66,12 @@ type AccountSettingsSectionProps = {
 }
 
 type ToastState = { kind: "success" | "error"; text: string } | null
+
+type CrocTransferState = {
+  qr: string
+  code: string
+  accountCount: number
+}
 
 type SortableAccountCardProps = {
   accountId: string
@@ -93,6 +105,22 @@ function parseCredentialsInput(text: string): Record<string, unknown> {
     throw new Error("Credentials must be a JSON object")
   }
   return parsed as Record<string, unknown>
+}
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === "string") return error
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>
+    if (typeof value.message === "string") return value.message
+    if (value.error) return formatError(value.error)
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return "Unknown error"
+    }
+  }
+  return String(error)
 }
 
 function isAuthFlow(strategy: AuthStrategy): boolean {
@@ -218,8 +246,12 @@ export function AccountSettingsSection({
   const [sessionById, setSessionById] = useState<Record<string, AccountSession | undefined>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
+  const [crocTransfer, setCrocTransfer] = useState<CrocTransferState | null>(null)
+  const [desktopScannerOpen, setDesktopScannerOpen] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const toastTimerRef = useRef<number | null>(null)
+  const desktopScanResolveRef = useRef<((content: string) => void) | null>(null)
+  const desktopScanRejectRef = useRef<((error: unknown) => void) | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -259,7 +291,7 @@ export function AccountSettingsSection({
           onAccountOrderChanged?.(order)
         }
       })
-      .catch((error) => setMessage(error instanceof Error ? error.message : String(error)))
+      .catch((error) => setMessage(formatError(error)))
 
     return () => {
       mounted = false
@@ -273,7 +305,8 @@ export function AccountSettingsSection({
     try {
       await task()
     } catch (error) {
-      const text = error instanceof Error ? error.message : String(error)
+      const text = formatError(error)
+      if (text === "QR scan cancelled") return
       setMessage(text)
       showToast("error", text)
     } finally {
@@ -347,10 +380,72 @@ export function AccountSettingsSection({
             url: started.url,
             userCode: started.userCode,
             status: "error",
-            message: error instanceof Error ? error.message : String(error),
+            message: formatError(error),
           },
         }))
       })
+  }
+
+  const finishImport = async (imported: AccountRecord[]) => {
+    await reload()
+    for (const pluginId of new Set(imported.map((account) => account.pluginId))) {
+      onAccountChanged(pluginId)
+    }
+    showToast("success", `${imported.length} account${imported.length === 1 ? "" : "s"} imported`)
+  }
+
+  const importFromCroc = async () => {
+    const imported = await importAccountTransferCroc(normalizeCrocCode(await scanAccountQr()))
+    await finishImport(imported)
+  }
+
+  const scanAccountQr = async (): Promise<string> => {
+    if (isMobileTauri()) return scanNativeAccountQr()
+    setDesktopScannerOpen(true)
+    return new Promise<string>((resolve, reject) => {
+      desktopScanResolveRef.current = resolve
+      desktopScanRejectRef.current = reject
+    })
+  }
+
+  const completeDesktopScan = (content: string) => {
+    setDesktopScannerOpen(false)
+    desktopScanResolveRef.current?.(content)
+    desktopScanResolveRef.current = null
+    desktopScanRejectRef.current = null
+  }
+
+  const cancelDesktopScan = () => {
+    setDesktopScannerOpen(false)
+    desktopScanRejectRef.current?.(new Error("QR scan cancelled"))
+    desktopScanResolveRef.current = null
+    desktopScanRejectRef.current = null
+  }
+
+  const failDesktopScan = (error: unknown) => {
+    setDesktopScannerOpen(false)
+    desktopScanRejectRef.current?.(error)
+    desktopScanResolveRef.current = null
+    desktopScanRejectRef.current = null
+  }
+
+  const exportToCroc = async () => {
+    const transfer = await startAccountTransferCroc()
+    const { default: QRCode } = await import("qrcode")
+    const qr = await QRCode.toDataURL(`croc-transfer:${transfer.code}`, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 280,
+    })
+    setCrocTransfer({ qr, code: transfer.code, accountCount: transfer.accountCount })
+    try {
+      await finishAccountTransferCroc()
+      setCrocTransfer(null)
+      showToast("success", "Accounts sent")
+    } catch (error) {
+      setCrocTransfer(null)
+      throw error
+    }
   }
 
   const handleAccountDragEnd = (pluginId: string, orderedIds: string[], event: DragEndEvent) => {
@@ -487,12 +582,25 @@ export function AccountSettingsSection({
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="text-lg font-semibold mb-0">Accounts</h3>
-          <p className="text-sm text-muted-foreground mb-2">Manage accounts and credentials.</p>
+          <p className="text-sm text-muted-foreground">Manage accounts and credentials.</p>
         </div>
         <Button type="button" variant="outline" size="xs" disabled={busy !== null} onClick={() => run("reload", reload)}>
           <RefreshCw className="size-3" />
           Reload
         </Button>
+      </div>
+
+      <div className="mt-2 mb-3 flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="xs" disabled={busy !== null} onClick={() => run("import-transfer-croc", importFromCroc)}>
+          <ScanLine className="size-3" />
+          Import Account
+        </Button>
+        {accounts.length > 0 && (
+          <Button type="button" variant="outline" size="xs" disabled={busy !== null} onClick={() => run("export-transfer-croc", exportToCroc)}>
+            <QrCode className="size-3" />
+            Export Account
+          </Button>
+        )}
       </div>
 
       {message && <p className="mb-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">{message}</p>}
@@ -761,6 +869,52 @@ export function AccountSettingsSection({
           </div>
         </div>
       )}
+
+      <QrScannerDialog
+        open={desktopScannerOpen}
+        onScan={completeDesktopScan}
+        onClose={cancelDesktopScan}
+        onError={failDesktopScan}
+      />
+
+      {crocTransfer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div role="dialog" aria-label="Account croc transfer" className="w-full max-w-sm rounded-lg border bg-background p-4 shadow-xl">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h4 className="font-semibold">Transfer accounts</h4>
+                <p className="text-xs text-muted-foreground">{crocTransfer.accountCount} accounts · waiting for the other device</p>
+              </div>
+              <Button type="button" variant="ghost" size="icon-xs" disabled={busy !== null} onClick={() => setCrocTransfer(null)} aria-label="Close croc transfer">
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="mt-3 flex justify-center rounded-md bg-white p-3">
+              <img src={crocTransfer.qr} alt="Scan croc transfer QR code on the other device" className="size-64" />
+            </div>
+            <div className="mt-3 rounded-md border bg-muted/30 p-2 text-center">
+              <code className="break-all text-xs">{crocTransfer.code}</code>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">Scan this QR code on the other OpenBurn app. Both devices need internet access; croc uses its public relay.</p>
+          </div>
+        </div>
+      )}
     </section>
   )
+}
+
+async function scanNativeAccountQr(): Promise<string> {
+  const permission = await requestPermissions()
+  if (permission !== "granted") {
+    throw new Error("Camera permission is required. Allow camera access in Android Settings and try again.")
+  }
+  const result = await scan({ formats: [Format.QRCode], cameraDirection: "back" })
+  return result.content
+}
+
+function normalizeCrocCode(content: string): string {
+  const value = content.trim()
+  const prefix = "croc-transfer:"
+  if (!value.startsWith(prefix)) return value
+  return decodeURIComponent(value.slice(prefix.length)).trim()
 }

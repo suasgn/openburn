@@ -28,7 +28,14 @@ export function useProbe({
     handleProbeResult,
   } = useProbeState({ onProbeResult })
 
-  const handleBatchComplete = useCallback(() => {}, [])
+  const handleBatchComplete = useCallback(
+    (missingPluginIds: string[]) => {
+      if (missingPluginIds.length > 0) {
+        setErrorForPlugins(missingPluginIds, "Provider did not return data")
+      }
+    },
+    [setErrorForPlugins]
+  )
 
   const { startBatch } = useProbeEvents({
     onResult: handleProbeResult,

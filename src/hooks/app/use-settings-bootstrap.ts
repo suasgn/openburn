@@ -38,6 +38,7 @@ import {
   type ThemeMode,
   type TimeFormatMode,
 } from "@/lib/settings"
+import { isMobileTauri } from "@/lib/platform"
 
 type UseSettingsBootstrapArgs = {
   setPluginSettings: (value: PluginSettings | null) => void
@@ -71,7 +72,7 @@ export function useSettingsBootstrap({
   startBatch,
 }: UseSettingsBootstrapArgs) {
   const applyStartOnLogin = useCallback(async (value: boolean) => {
-    if (!isTauri()) return
+    if (!isTauri() || isMobileTauri()) return
     const currentlyEnabled = await isAutostartEnabled()
     if (currentlyEnabled === value) return
 

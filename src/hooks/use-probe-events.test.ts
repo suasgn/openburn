@@ -155,6 +155,23 @@ describe("useProbeEvents", () => {
     expect(onBatchComplete).not.toHaveBeenCalled()
   })
 
+  it("reports plugins that complete without a result", async () => {
+    let batchId = ""
+    invokeMock.mockImplementation(async (_cmd: string, args: any) => {
+      batchId = args.batchId
+      return { batchId, pluginIds: ["a", "b"] }
+    })
+    const onBatchComplete = vi.fn()
+    const { result } = renderHook(() =>
+      useProbeEvents({ onResult: vi.fn(), onBatchComplete })
+    )
+
+    await act(() => result.current.startBatch(["a", "b"]))
+    listeners.get("probe:batch-complete")?.({ payload: { batchId } })
+
+    expect(onBatchComplete).toHaveBeenCalledWith(["a", "b"])
+  })
+
   it("rejects when invoke fails", async () => {
     invokeMock.mockRejectedValueOnce(new Error("boom"))
     const { result } = renderHook(() =>

@@ -37,6 +37,16 @@ const WHITELISTED_ENV_VARS: [&str; 21] = [
 ];
 const MIN_BLOCKING_TIMEOUT: Duration = Duration::from_millis(1);
 
+#[cfg(target_os = "android")]
+fn android_tls_config() -> rustls::ClientConfig {
+    let roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth()
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ProbeDeadline {
     expires_at: Option<Instant>,
@@ -532,6 +542,7 @@ pub(crate) fn redact_log_message(msg: &str) -> String {
     redact_workspace_ids(&result)
 }
 
+#[allow(deprecated)]
 pub(crate) fn decrypt_aes_256_gcm_envelope(
     envelope: &str,
     key_b64: &str,
@@ -591,6 +602,7 @@ pub(crate) fn decrypt_aes_256_gcm_envelope(
     String::from_utf8(plaintext).map_err(|e| format!("decrypted payload is not UTF-8: {}", e))
 }
 
+#[allow(deprecated)]
 fn encrypt_aes_256_gcm_envelope(plaintext: &str, key_b64: &str) -> Result<String, String> {
     let trimmed_key = key_b64.trim();
     let key = BASE64_STANDARD
@@ -893,6 +905,11 @@ fn inject_http<'js>(
                     .timeout(timeout)
                     .connect_timeout(timeout)
                     .redirect(reqwest::redirect::Policy::none());
+
+                #[cfg(target_os = "android")]
+                if !req.dangerously_ignore_tls.unwrap_or(false) {
+                    builder = builder.use_preconfigured_tls(android_tls_config());
+                }
 
                 // Apply pre-resolved proxy (localhost bypass already configured)
                 if let Some(resolved) = crate::config::get_resolved_proxy() {
@@ -2613,6 +2630,7 @@ mod tests {
     use super::*;
     use rquickjs::{Context, Function, Object, Runtime};
 
+    #[allow(deprecated)]
     fn encrypt_aes_256_gcm_envelope_for_test(key: &[u8], plaintext: &str) -> String {
         let iv = [7_u8; 16];
         type Aes256Gcm16 = AesGcm<Aes256, U16>;

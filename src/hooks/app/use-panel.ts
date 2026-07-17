@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow, PhysicalSize, currentMonitor } from "@tauri-apps/api/window"
 import type { ActiveView } from "@/components/side-nav"
 import type { DisplayPluginState } from "@/hooks/app/use-app-plugin-views"
+import { isMobileTauri } from "@/lib/platform"
 
 const PANEL_WIDTH = 400
 const MAX_HEIGHT_FALLBACK_PX = 600
@@ -63,12 +64,12 @@ export function usePanel({
   }, [focusContainer])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || isMobileTauri()) return
     invoke("init_panel").catch(console.error)
   }, [])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || isMobileTauri()) return
     if (showAbout) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -82,7 +83,7 @@ export function usePanel({
   }, [showAbout])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || isMobileTauri()) return
     let cancelled = false
     const unlisteners: (() => void)[] = []
 
@@ -150,7 +151,7 @@ export function usePanel({
   }, [activeView, displayPlugins, setActiveView, showAbout])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri() || isMobileTauri()) return
     const container = containerRef.current
     if (!container) return
 

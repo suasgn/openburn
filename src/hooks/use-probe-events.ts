@@ -19,11 +19,16 @@ type ProbeBatchStarted = {
 
 type UseProbeEventsOptions = {
   onResult: (output: PluginOutput) => void
-  onBatchComplete: () => void
+  onBatchComplete: (missingPluginIds: string[]) => void
+}
+
+type ActiveBatch = {
+  pluginIds: string[]
+  resultPluginIds: Set<string>
 }
 
 export function useProbeEvents({ onResult, onBatchComplete }: UseProbeEventsOptions) {
-  const activeBatchIds = useRef<Set<string>>(new Set())
+  const activeBatches = useRef<Map<string, ActiveBatch>>(new Map())
   const unlisteners = useRef<UnlistenFn[]>([])
   const listenersReadyRef = useRef<Promise<void> | null>(null)
   const listenersReadyResolveRef = useRef<(() => void) | null>(null)
@@ -38,7 +43,9 @@ export function useProbeEvents({ onResult, onBatchComplete }: UseProbeEventsOpti
 
     const setup = async () => {
       const resultUnlisten = await listen<ProbeResult>("probe:result", (event) => {
-        if (activeBatchIds.current.has(event.payload.batchId)) {
+        const batch = activeBatches.current.get(event.payload.batchId)
+        if (batch) {
+          batch.resultPluginIds.add(event.payload.output.providerId)
           onResult(event.payload.output)
         }
       })
@@ -51,8 +58,12 @@ export function useProbeEvents({ onResult, onBatchComplete }: UseProbeEventsOpti
       const completeUnlisten = await listen<ProbeBatchComplete>(
         "probe:batch-complete",
         (event) => {
-          if (activeBatchIds.current.delete(event.payload.batchId)) {
-            onBatchComplete()
+          const batch = activeBatches.current.get(event.payload.batchId)
+          if (batch) {
+            activeBatches.current.delete(event.payload.batchId)
+            onBatchComplete(
+              batch.pluginIds.filter((pluginId) => !batch.resultPluginIds.has(pluginId))
+            )
           }
         }
       )
@@ -73,6 +84,7 @@ export function useProbeEvents({ onResult, onBatchComplete }: UseProbeEventsOpti
 
     return () => {
       cancelled = true
+      activeBatches.current.clear()
       unlisteners.current.forEach((unlisten) => unlisten())
       unlisteners.current = []
       listenersReadyRef.current = null
@@ -91,15 +103,20 @@ export function useProbeEvents({ onResult, onBatchComplete }: UseProbeEventsOpti
         ? crypto.randomUUID()
         : `batch-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
-    activeBatchIds.current.add(batchId)
+    activeBatches.current.set(batchId, {
+      pluginIds: pluginIds ? [...new Set(pluginIds)] : [],
+      resultPluginIds: new Set(),
+    })
     const args = pluginIds
       ? { batchId, pluginIds }
       : { batchId }
     try {
       const result = await invoke<ProbeBatchStarted>("start_probe_batch", args)
+      const activeBatch = activeBatches.current.get(batchId)
+      if (activeBatch) activeBatch.pluginIds = result.pluginIds
       return result.pluginIds
     } catch (error) {
-      activeBatchIds.current.delete(batchId)
+      activeBatches.current.delete(batchId)
       throw error
     }
   }, [])

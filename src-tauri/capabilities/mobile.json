@@ -1,0 +1,18 @@
+{
+  "identifier": "mobile",
+  "description": "Android and iOS app features",
+  "windows": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "store:default",
+    "log:default",
+    "clipboard-manager:allow-write-text",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-open-app-settings"
+  ]
+}

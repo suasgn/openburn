@@ -5,6 +5,13 @@ pub mod runtime;
 use manifest::LoadedPlugin;
 use std::path::{Path, PathBuf};
 
+#[cfg(mobile)]
+use include_dir::{Dir, include_dir};
+
+#[cfg(mobile)]
+static EMBEDDED_BUNDLED_PLUGINS: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/resources/bundled_plugins");
+
 pub fn initialize_plugins(
     app_data_dir: &Path,
     resource_dir: &Path,
@@ -25,9 +32,20 @@ pub fn initialize_plugins(
         );
     }
 
-    let bundled_dir = resolve_bundled_dir(resource_dir);
-    if bundled_dir.exists() {
-        copy_dir_recursive(&bundled_dir, &install_dir);
+    #[cfg(mobile)]
+    let _ = resource_dir;
+
+    #[cfg(mobile)]
+    if !has_installed_plugins(&install_dir) {
+        copy_embedded_dir(&EMBEDDED_BUNDLED_PLUGINS, &install_dir);
+    }
+
+    #[cfg(not(mobile))]
+    {
+        let bundled_dir = resolve_bundled_dir(resource_dir);
+        if bundled_dir.exists() {
+            copy_dir_recursive(&bundled_dir, &install_dir);
+        }
     }
 
     let plugins = manifest::load_plugins_from_dir(&install_dir);
@@ -47,6 +65,7 @@ fn find_dev_plugins_dir() -> Option<PathBuf> {
     None
 }
 
+#[cfg(not(mobile))]
 fn resolve_bundled_dir(resource_dir: &Path) -> PathBuf {
     let nested = resource_dir.join("resources/bundled_plugins");
     if nested.exists() {
@@ -66,6 +85,19 @@ fn is_dir_empty(path: &Path) -> bool {
     }
 }
 
+#[cfg(mobile)]
+fn has_installed_plugins(path: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+
+    entries.flatten().any(|entry| {
+        entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+            && entry.path().join("plugin.json").is_file()
+    })
+}
+
+#[cfg(not(mobile))]
 fn copy_dir_recursive(src: &Path, dst: &Path) {
     match std::fs::read_dir(src) {
         Ok(entries) => {
@@ -114,5 +146,16 @@ fn copy_dir_recursive(src: &Path, dst: &Path) {
         Err(err) => {
             log::warn!("failed to read dir {}: {}", src.display(), err);
         }
+    }
+}
+
+#[cfg(mobile)]
+fn copy_embedded_dir(src: &Dir<'_>, dst: &Path) {
+    if let Err(err) = src.extract(dst) {
+        log::warn!(
+            "failed to extract embedded plugins to {}: {}",
+            dst.display(),
+            err
+        );
     }
 }

@@ -24,6 +24,7 @@ import { getTimeFormatter } from "@/lib/reset-tooltip";
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon";
 import type { SettingsPluginState } from "@/hooks/app/use-settings-plugin-list";
 import { cn } from "@/lib/utils";
+import { isMobileTauri } from "@/lib/platform";
 
 const TRAY_PREVIEW_SIZE_PX = getTrayIconSizePx(1);
 
@@ -234,8 +235,10 @@ export function SettingsPage({
   startOnLogin,
   onStartOnLoginChange,
 }: SettingsPageProps) {
+  const isMobile = isMobileTauri();
+
   return (
-    <div className="py-3 space-y-4">
+    <div className="space-y-4 py-3 pb-6">
       <section>
         <h3 className="text-lg font-semibold mb-0">Auto Refresh</h3>
         <p className="text-sm text-muted-foreground mb-2">
@@ -363,7 +366,7 @@ export function SettingsPage({
           </div>
         </div>
       </section>
-      <section>
+      {!isMobile && <section>
         <h3 className="text-lg font-semibold mb-0">Menubar Icon</h3>
         <p className="text-sm text-muted-foreground mb-2">
           What shows in the menu bar
@@ -394,7 +397,7 @@ export function SettingsPage({
             })}
           </div>
         </div>
-      </section>
+      </section>}
       <section>
         <h3 className="text-lg font-semibold mb-0">App Theme</h3>
         <p className="text-sm text-muted-foreground mb-2">
@@ -422,11 +425,11 @@ export function SettingsPage({
           </div>
         </div>
       </section>
-      <GlobalShortcutSection
-        globalShortcut={globalShortcut}
-        onGlobalShortcutChange={onGlobalShortcutChange}
-      />
-      <section>
+      {!isMobile && <GlobalShortcutSection
+          globalShortcut={globalShortcut}
+          onGlobalShortcutChange={onGlobalShortcutChange}
+        />}
+      {!isMobile && <section>
         <h3 className="text-lg font-semibold mb-0">Start on Login</h3>
         <p className="text-sm text-muted-foreground mb-2">
           {APP_NAME} starts when you sign in
@@ -439,7 +442,7 @@ export function SettingsPage({
           />
           Start on login
         </label>
-      </section>
+      </section>}
       <AccountSettingsSection
         plugins={plugins}
         onAccountChanged={onAccountChanged}

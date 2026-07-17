@@ -11,9 +11,9 @@ const PROBE_TIMEOUT_SECS: u64 = 30;
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ProgressFormat {
     Percent,
-     Dollars,
-     Count { suffix: String },
- }
+    Dollars,
+    Count { suffix: String },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

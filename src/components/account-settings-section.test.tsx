@@ -9,7 +9,13 @@ const mocks = vi.hoisted(() => ({
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),
+  startAccountTransferCroc: vi.fn(),
+  finishAccountTransferCroc: vi.fn(),
   hasAccountCredentials: vi.fn(),
+  importAccountTransferCroc: vi.fn(),
+  qrToDataUrl: vi.fn(),
+  requestPermissions: vi.fn(),
+  scan: vi.fn(),
   setAccountCredentials: vi.fn(),
   clearAccountCredentials: vi.fn(),
   syncAccountToOpencodeAuth: vi.fn(),
@@ -70,6 +76,19 @@ vi.mock("@/lib/accounts", () => ({
   startAccountAuth: mocks.startAccountAuth,
   finishAccountAuth: mocks.finishAccountAuth,
   cancelAccountAuth: mocks.cancelAccountAuth,
+  startAccountTransferCroc: mocks.startAccountTransferCroc,
+  finishAccountTransferCroc: mocks.finishAccountTransferCroc,
+  importAccountTransferCroc: mocks.importAccountTransferCroc,
+}))
+
+vi.mock("qrcode", () => ({
+  default: { toDataURL: mocks.qrToDataUrl },
+}))
+
+vi.mock("@tauri-apps/plugin-barcode-scanner", () => ({
+  Format: { QRCode: "QR_CODE" },
+  requestPermissions: mocks.requestPermissions,
+  scan: mocks.scan,
 }))
 
 vi.mock("@/lib/settings", async (importOriginal) => ({
@@ -128,6 +147,7 @@ describe("AccountSettingsSection", () => {
     mocks.setAccountCredentials.mockResolvedValue(undefined)
     mocks.loadAccountOrderByPlugin.mockResolvedValue({})
     mocks.saveAccountOrderByPlugin.mockResolvedValue(undefined)
+    mocks.requestPermissions.mockResolvedValue("granted")
   })
 
   afterEach(() => {
@@ -160,5 +180,96 @@ describe("AccountSettingsSection", () => {
       })
     })
     expect(onAccountChanged).toHaveBeenCalledWith("regional-ai")
+  })
+
+  it("shows a croc QR code for configured credentials", async () => {
+    mocks.hasAccountCredentials.mockResolvedValue(true)
+    mocks.startAccountTransferCroc.mockResolvedValue({ code: "7-red-blue", accountCount: 2 })
+    mocks.finishAccountTransferCroc.mockImplementation(() => new Promise(() => {}))
+    mocks.qrToDataUrl.mockResolvedValue("data:image/png;base64,qr")
+    render(
+      <AccountSettingsSection
+        plugins={[regionalApiPlugin]}
+        onAccountChanged={vi.fn()}
+        onPluginEnabledChange={vi.fn()}
+      />
+    )
+
+    await screen.findByText("Personal")
+    await userEvent.click(screen.getByRole("button", { name: "Export Account" }))
+
+    await waitFor(() => expect(mocks.startAccountTransferCroc).toHaveBeenCalledWith())
+    expect(
+      await screen.findByRole("dialog", { name: "Account croc transfer" }, { timeout: 10_000 })
+    ).toBeInTheDocument()
+    expect(screen.getByText("7-red-blue")).toBeInTheDocument()
+  })
+
+  it("imports accounts through a scanned croc code on mobile", async () => {
+    const originalUserAgent = navigator.userAgent
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" })
+    const imported = {
+      id: "acc-2",
+      pluginId: "regional-ai",
+      enabled: true,
+      authStrategyId: "apiKey",
+      label: "Imported",
+      settings: {},
+      createdAt: "2026-01-02T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    }
+    mocks.importAccountTransferCroc.mockResolvedValue([imported])
+    mocks.scan.mockResolvedValue({ content: "croc-transfer:7-red-blue", format: "QR_CODE" })
+    render(
+      <AccountSettingsSection
+        plugins={[regionalApiPlugin]}
+        onAccountChanged={vi.fn()}
+        onPluginEnabledChange={vi.fn()}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole("button", { name: "Import Account" }))
+
+    await waitFor(() => expect(mocks.importAccountTransferCroc).toHaveBeenCalledWith("7-red-blue"))
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: originalUserAgent })
+  })
+
+  it("shows structured transfer errors instead of object object", async () => {
+    const originalUserAgent = navigator.userAgent
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" })
+    mocks.scan.mockResolvedValue({ content: "croc-transfer:7-red-blue", format: "QR_CODE" })
+    mocks.importAccountTransferCroc.mockRejectedValue({ message: "croc transfer failed" })
+    render(
+      <AccountSettingsSection
+        plugins={[regionalApiPlugin]}
+        onAccountChanged={vi.fn()}
+        onPluginEnabledChange={vi.fn()}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole("button", { name: "Import Account" }))
+
+    expect((await screen.findAllByText("croc transfer failed")).length).toBeGreaterThan(0)
+    expect(screen.queryByText("[object Object]")).not.toBeInTheDocument()
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: originalUserAgent })
+  })
+
+  it("explains when Android camera permission is denied", async () => {
+    const originalUserAgent = navigator.userAgent
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" })
+    mocks.requestPermissions.mockResolvedValue("denied")
+    render(
+      <AccountSettingsSection
+        plugins={[regionalApiPlugin]}
+        onAccountChanged={vi.fn()}
+        onPluginEnabledChange={vi.fn()}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole("button", { name: "Import Account" }))
+
+    expect((await screen.findAllByText("Camera permission is required. Allow camera access in Android Settings and try again.")).length).toBeGreaterThan(0)
+    expect(mocks.scan).not.toHaveBeenCalled()
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: originalUserAgent })
   })
 })
