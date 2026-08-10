@@ -85,6 +85,38 @@ fn persist_master_key<R: Runtime>(app: &AppHandle<R>, version: u32, key: &[u8; 3
     }
 }
 
+fn parse_master_key_payload(payload: Vec<u8>, error_message: &str) -> Result<[u8; 32]> {
+    payload
+        .try_into()
+        .map_err(|_| BackendError::Crypto(error_message.to_string()))
+}
+
+#[cfg(desktop)]
+fn read_legacy_master_key(version: u32) -> Result<Option<[u8; 32]>> {
+    let entry = Entry::new(SERVICE_NAME, &master_key_name(version))
+        .map_err(|error| BackendError::Keyring(error.to_string()))?;
+    match entry.get_secret() {
+        Ok(payload) => Ok(Some(parse_master_key_payload(
+            payload,
+            "legacy master key length invalid",
+        )?)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(BackendError::Keyring(error.to_string())),
+    }
+}
+
+#[cfg(desktop)]
+fn migrate_legacy_master_key<R: Runtime>(
+    app: &AppHandle<R>,
+    version: u32,
+    key: &[u8; 32],
+) -> Result<()> {
+    app.keyring()
+        .store
+        .set_bytes(&master_key_name(version), key)
+        .map_err(|error| BackendError::Keyring(error.to_string()))
+}
+
 fn read_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Result<Option<[u8; 32]>> {
     let cache = MASTER_KEY_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(key) = cache
@@ -101,22 +133,32 @@ fn read_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Result<Optio
 
     #[cfg(desktop)]
     let key = match app.keyring().store.get_bytes(&master_key_name(version)) {
-        Ok(Some(payload)) => Some(
-            payload
-                .try_into()
-                .map_err(|_| BackendError::Crypto("master key length invalid".to_string()))?,
-        ),
+        Ok(Some(payload)) => match parse_master_key_payload(payload, "master key length invalid") {
+            Ok(key) => Some(key),
+            Err(_) => {
+                let Some(key) = read_legacy_master_key(version)? else {
+                    return Err(BackendError::Crypto(
+                        "master key length invalid".to_string(),
+                    ));
+                };
+                migrate_legacy_master_key(app, version, &key)?;
+                Some(key)
+            }
+        },
         Ok(None) => {
-            let entry = Entry::new(SERVICE_NAME, &master_key_name(version))
-                .map_err(|error| BackendError::Keyring(error.to_string()))?;
-            let Some(payload) = entry.get_secret().ok() else {
+            let Some(key) = read_legacy_master_key(version)? else {
                 return Ok(None);
             };
-            Some(payload.try_into().map_err(|_| {
-                BackendError::Crypto("legacy master key length invalid".to_string())
-            })?)
+            migrate_legacy_master_key(app, version, &key)?;
+            Some(key)
         }
-        Err(error) => return Err(BackendError::Keyring(error.to_string())),
+        Err(error) => match read_legacy_master_key(version) {
+            Ok(Some(key)) => {
+                migrate_legacy_master_key(app, version, &key)?;
+                Some(key)
+            }
+            Ok(None) | Err(_) => return Err(BackendError::Keyring(error.to_string())),
+        },
     };
 
     if let Some(key) = key {
@@ -125,6 +167,19 @@ fn read_master_key<R: Runtime>(app: &AppHandle<R>, version: u32) -> Result<Optio
         Ok(Some(key))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn master_key_payload_requires_32_bytes() {
+        let key = super::parse_master_key_payload(vec![7_u8; 32], "invalid").expect("32-byte key");
+        assert_eq!(key, [7_u8; 32]);
+
+        let error = super::parse_master_key_payload(vec![7_u8; 31], "invalid")
+            .expect_err("31-byte key should fail");
+        assert_eq!(error.to_string(), "crypto error: invalid");
     }
 }
 
